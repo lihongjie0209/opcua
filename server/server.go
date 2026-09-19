@@ -81,6 +81,7 @@ type Server struct {
 	scheduler                            *Scheduler
 	historian                            HistoryReadWriter
 	allowSecurityPolicyNone              bool
+	securityPolicyModes                  map[string]map[ua.MessageSecurityMode]struct{}
 	anonymousIdentityAuthenticator       AnonymousIdentityAuthenticator
 	userNameIdentityAuthenticator        UserNameIdentityAuthenticator
 	x509IdentityAuthenticator            X509IdentityAuthenticator
@@ -957,7 +958,7 @@ func (srv *Server) initializeNamespace() error {
 
 func (srv *Server) buildEndpointDescriptions() []ua.EndpointDescription {
 	eds := []ua.EndpointDescription{}
-	if srv.allowSecurityPolicyNone {
+	if srv.allowSecurityPolicyNone && srv.securityPolicyEnabled(ua.SecurityPolicyURINone, ua.MessageSecurityModeNone) {
 		toks := []ua.UserTokenPolicy{}
 		if srv.anonymousIdentityAuthenticator != nil {
 			toks = append(toks, ua.UserTokenPolicy{
@@ -1000,6 +1001,9 @@ func (srv *Server) buildEndpointDescriptions() []ua.EndpointDescription {
 		ua.SecurityPolicyURIAes256Sha256RsaPss,
 	}
 	for _, uri := range uris {
+		if !srv.securityPolicyEnabled(uri, ua.MessageSecurityModeSign) {
+			continue
+		}
 		toks := []ua.UserTokenPolicy{}
 		if srv.anonymousIdentityAuthenticator != nil {
 			toks = append(toks, ua.UserTokenPolicy{
@@ -1034,6 +1038,9 @@ func (srv *Server) buildEndpointDescriptions() []ua.EndpointDescription {
 		})
 	}
 	for _, uri := range uris {
+		if !srv.securityPolicyEnabled(uri, ua.MessageSecurityModeSignAndEncrypt) {
+			continue
+		}
 		toks := []ua.UserTokenPolicy{}
 		if srv.anonymousIdentityAuthenticator != nil {
 			toks = append(toks, ua.UserTokenPolicy{
@@ -1068,6 +1075,18 @@ func (srv *Server) buildEndpointDescriptions() []ua.EndpointDescription {
 		})
 	}
 	return eds
+}
+
+func (srv *Server) securityPolicyEnabled(uri string, mode ua.MessageSecurityMode) bool {
+	if srv.securityPolicyModes == nil {
+		return true
+	}
+	modes, ok := srv.securityPolicyModes[uri]
+	if !ok {
+		return false
+	}
+	_, ok = modes[mode]
+	return ok
 }
 
 // getNextChannelID gets next id in sequence, skipping zero.

@@ -135,6 +135,23 @@ func WithSecurityPolicyNone(value bool) Option {
 	}
 }
 
+// WithSecurityPolicyModes restricts endpoint descriptions and secure-channel
+// acceptance to the supplied policy URI and message-security-mode pairs.
+// An empty map disables every endpoint.
+func WithSecurityPolicyModes(value map[string][]ua.MessageSecurityMode) Option {
+	return func(srv *Server) error {
+		srv.securityPolicyModes = make(map[string]map[ua.MessageSecurityMode]struct{}, len(value))
+		for uri, values := range value {
+			modes := make(map[ua.MessageSecurityMode]struct{}, len(values))
+			for _, mode := range values {
+				modes[mode] = struct{}{}
+			}
+			srv.securityPolicyModes[uri] = modes
+		}
+		return nil
+	}
+}
+
 // WithAnonymousIdentityAuthenticator sets the authenticator for AnonymousIdentity.
 // Provided authenticator can check applicationURI of the client certificate, if provided.
 func WithAnonymousIdentityAuthenticator(authenticator AnonymousIdentityAuthenticator) Option {
