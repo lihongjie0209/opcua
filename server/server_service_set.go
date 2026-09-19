@@ -2520,6 +2520,26 @@ func (srv *Server) handleHistoryRead(ch *serverSecureChannel, requestid uint32, 
 		}
 		return nil
 	}
+	// Validate history access before handing the request to the historian. The
+	// historian API intentionally owns storage only and does not receive the
+	// session identity, so authorization must remain in the server layer.
+	if status := srv.validateHistoryReadAccess(session, req.NodesToRead); status.IsBad() {
+		srv.serverDiagnosticsSummary.RejectedRequestsCount++
+		err := ch.Write(
+			&ua.ServiceFault{
+				ResponseHeader: ua.ResponseHeader{
+					Timestamp:     time.Now(),
+					RequestHandle: req.RequestHandle,
+					ServiceResult: status,
+				},
+			},
+			requestid,
+		)
+		if err != nil {
+			return err
+		}
+		return nil
+	}
 
 	// check if historian installed
 	h := srv.historian
@@ -2632,6 +2652,30 @@ func (srv *Server) handleHistoryRead(ch *serverSecureChannel, requestid uint32, 
 		return err
 	}
 	return nil
+}
+
+func (srv *Server) validateHistoryReadAccess(session *Session, nodes []ua.HistoryReadValueID) ua.StatusCode {
+	for _, item := range nodes {
+		node, ok := srv.NamespaceManager().FindNode(item.NodeID)
+		if !ok {
+			return ua.BadNodeIDUnknown
+		}
+		permissions := node.UserRolePermissions(session.userIdentity)
+		if !IsUserPermitted(permissions, ua.PermissionTypeBrowse) {
+			return ua.BadNodeIDUnknown
+		}
+		variable, ok := node.(*VariableNode)
+		if !ok {
+			return ua.BadNodeClassInvalid
+		}
+		if variable.AccessLevel()&ua.AccessLevelsHistoryRead == 0 {
+			return ua.BadNotReadable
+		}
+		if variable.UserAccessLevel(session.userIdentity)&ua.AccessLevelsHistoryRead == 0 {
+			return ua.BadUserAccessDenied
+		}
+	}
+	return ua.Good
 }
 
 // readRange returns slice of value specified by IndexRange
