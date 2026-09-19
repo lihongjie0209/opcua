@@ -284,14 +284,6 @@ func (srv *Server) ServerCapabilities() *ua.ServerCapabilities {
 // ListenAndServe always returns a non-nil error. After server Close,
 // the returned error is BadServerHalted.
 func (srv *Server) ListenAndServe() error {
-	srv.Lock()
-	if srv.state != ua.ServerStateUnknown {
-		srv.Unlock()
-		return ua.BadInternalError
-	}
-	srv.state = ua.ServerStateRunning
-	srv.Unlock()
-
 	baseURL, err := url.Parse(srv.endpointURL)
 	if err != nil {
 		// log.Printf("Error opening secure channel listener. %s\n", err.Error())
@@ -303,6 +295,24 @@ func (srv *Server) ListenAndServe() error {
 		// log.Printf("Error opening secure channel listener. %s\n", err.Error())
 		return ua.BadResourceUnavailable
 	}
+	defer ln.Close()
+	return srv.Serve(ln)
+}
+
+// Serve accepts OPC UA connections from ln until the server is closed or the
+// listener fails. The caller owns address selection; Serve closes ln when the
+// server is closed. It always returns a non-nil error.
+func (srv *Server) Serve(ln net.Listener) error {
+	if ln == nil {
+		return ua.BadInvalidArgument
+	}
+	srv.Lock()
+	if srv.state != ua.ServerStateUnknown {
+		srv.Unlock()
+		return ua.BadInternalError
+	}
+	srv.state = ua.ServerStateRunning
+	srv.Unlock()
 
 	go func() {
 		<-srv.closing
@@ -310,7 +320,7 @@ func (srv *Server) ListenAndServe() error {
 	}()
 
 	var wg sync.WaitGroup
-	err = srv.serve(ln, &wg)
+	err := srv.serve(ln, &wg)
 
 	// wait until channels closed
 	wg.Wait()
