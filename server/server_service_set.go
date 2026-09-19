@@ -2664,15 +2664,23 @@ func (srv *Server) validateHistoryReadAccess(session *Session, nodes []ua.Histor
 		if !IsUserPermitted(permissions, ua.PermissionTypeBrowse) {
 			return ua.BadNodeIDUnknown
 		}
-		variable, ok := node.(*VariableNode)
-		if !ok {
+		switch typed := node.(type) {
+		case *VariableNode:
+			if typed.AccessLevel()&ua.AccessLevelsHistoryRead == 0 {
+				return ua.BadNotReadable
+			}
+			if typed.UserAccessLevel(session.userIdentity)&ua.AccessLevelsHistoryRead == 0 {
+				return ua.BadUserAccessDenied
+			}
+		case *ObjectNode:
+			if typed.EventNotifier()&ua.EventNotifierHistoryRead == 0 {
+				return ua.BadNotReadable
+			}
+			if !IsUserPermitted(permissions, ua.PermissionTypeReadHistory) {
+				return ua.BadUserAccessDenied
+			}
+		default:
 			return ua.BadNodeClassInvalid
-		}
-		if variable.AccessLevel()&ua.AccessLevelsHistoryRead == 0 {
-			return ua.BadNotReadable
-		}
-		if variable.UserAccessLevel(session.userIdentity)&ua.AccessLevelsHistoryRead == 0 {
-			return ua.BadUserAccessDenied
 		}
 	}
 	return ua.Good
