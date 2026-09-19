@@ -309,7 +309,11 @@ func (srv *Server) Serve(ln net.Listener) error {
 	}
 	srv.Lock()
 	if srv.state != ua.ServerStateUnknown {
+		state := srv.state
 		srv.Unlock()
+		if state == ua.ServerStateShutdown {
+			srv.workerpool.StopWait()
+		}
 		return ua.BadInternalError
 	}
 	srv.state = ua.ServerStateRunning
