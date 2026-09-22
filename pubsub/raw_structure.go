@@ -7,6 +7,56 @@ import (
 	"github.com/awcullen/opcua/ua"
 )
 
+// RawFieldWidth validates metadata and returns its fixed RawData wire width.
+func RawFieldWidth(meta RawFieldMeta) (int, error) {
+	if meta.Type == RawStructureType {
+		return rawStructureFieldWidth(meta, 0)
+	}
+	if meta.Structure != nil {
+		return 0, fmt.Errorf("unexpected RawData Structure metadata")
+	}
+	if meta.Type == RawOptionSetType {
+		if meta.ValueRank != 0 && meta.ValueRank != -1 || len(meta.ArrayDimensions) != 0 || meta.MaxStringLength != 0 {
+			return 0, fmt.Errorf("RawData OptionSet must be scalar")
+		}
+		return rawOptionSetWidth(meta.OptionSetLength)
+	}
+	if meta.OptionSetLength != 0 {
+		return 0, fmt.Errorf("unexpected RawData OptionSet length")
+	}
+	if meta.ValueRank > 1 {
+		width, maximum, err := rawMatrixLayout(meta.Type, meta.ValueRank, meta.ArrayDimensions, meta.MaxStringLength)
+		if err != nil {
+			return 0, err
+		}
+		return 4 + 4*int(meta.ValueRank) + maximum*width, nil
+	}
+	if meta.ValueRank == 1 {
+		width, maximum, err := rawArrayLayout(meta.Type, meta.ValueRank, meta.ArrayDimensions, meta.MaxStringLength)
+		if err != nil {
+			return 0, err
+		}
+		return 4 + maximum*width, nil
+	}
+	if meta.ValueRank != 0 && meta.ValueRank != -1 || len(meta.ArrayDimensions) != 0 {
+		return 0, fmt.Errorf("unsupported RawData ValueRank")
+	}
+	if meta.Type == RawString || meta.Type == RawByteString {
+		if meta.MaxStringLength == 0 || meta.MaxStringLength > maxRawMessageBytes-4 {
+			return 0, fmt.Errorf("invalid RawData string length")
+		}
+		return 4 + int(meta.MaxStringLength), nil
+	}
+	if meta.MaxStringLength != 0 {
+		return 0, fmt.Errorf("unexpected RawData string length")
+	}
+	width := rawFixedWidth(meta.Type)
+	if width == 0 {
+		return 0, fmt.Errorf("unsupported RawData type")
+	}
+	return width, nil
+}
+
 func rawStructureWidth(meta *RawStructureMeta, depth int) (int, error) {
 	if meta == nil || depth > 16 || len(meta.Fields) == 0 || len(meta.Fields) > 256 {
 		return 0, fmt.Errorf("invalid RawData Structure definition")

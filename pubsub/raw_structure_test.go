@@ -20,6 +20,9 @@ func TestRawKeyFrameNestedStructure(t *testing.T) {
 		"options": RawOptionSet{Value: []byte{1}, ValidBits: []byte{3}},
 	}}
 	field := RawField{Type: meta.Type, Structure: meta.Structure, Value: value}
+	if width, err := RawFieldWidth(meta); err != nil || width != 20 {
+		t.Fatalf("width=%d err=%v", width, err)
+	}
 	want := []byte{0x0b, 0, 0, 42, 0, 1, 2, 0, 0, 0, 'o', 'k', 0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 3}
 	wire, err := EncodeRawKeyFrame(RawKeyFrame{Fields: []RawField{field}})
 	if err != nil || !bytes.Equal(wire, want) {
