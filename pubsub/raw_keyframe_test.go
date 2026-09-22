@@ -55,7 +55,9 @@ func TestRawKeyFrameOneDimensionalArrayRejectsInvalid(t *testing.T) {
 		{"missing dimensions", RawField{Type: RawByte, ValueRank: 1, Value: []any{byte(1)}}},
 		{"oversized value", RawField{Type: RawByte, ValueRank: 1, ArrayDimensions: []uint32{1}, Value: []any{byte(1), byte(2)}}},
 		{"wrong element", RawField{Type: RawByte, ValueRank: 1, ArrayDimensions: []uint32{2}, Value: []any{uint16(1)}}},
-		{"unsupported string array", RawField{Type: RawString, ValueRank: 1, ArrayDimensions: []uint32{2}, MaxStringLength: 3, Value: []any{"x"}}},
+		{"string array missing maximum", RawField{Type: RawString, ValueRank: 1, ArrayDimensions: []uint32{2}, Value: []any{"x"}}},
+		{"string element too long", RawField{Type: RawString, ValueRank: 1, ArrayDimensions: []uint32{2}, MaxStringLength: 2, Value: []any{"abc"}}},
+		{"bytestring wrong element", RawField{Type: RawByteString, ValueRank: 1, ArrayDimensions: []uint32{2}, MaxStringLength: 2, Value: []any{"a"}}},
 		{"rank mismatch", RawField{Type: RawByte, ValueRank: 2, ArrayDimensions: []uint32{2, 2}, Value: []any{byte(1)}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -84,6 +86,45 @@ func TestRawKeyFrameOneDimensionalArrayRejectsInvalid(t *testing.T) {
 				t.Fatal("invalid wire accepted")
 			}
 		})
+	}
+}
+
+func TestRawKeyFrameOneDimensionalPaddedStringArrays(t *testing.T) {
+	t.Parallel()
+	fields := []RawField{
+		{Type: RawString, ValueRank: 1, ArrayDimensions: []uint32{3}, MaxStringLength: 3, Value: []any{"hi", ""}},
+		{Type: RawByteString, ValueRank: 1, ArrayDimensions: []uint32{2}, MaxStringLength: 2, Value: []any{[]byte{0xab}}},
+	}
+	want := []byte{0x0b, 1, 0, 2, 0, 0, 0}
+	want = append(want, []byte{2, 0, 0, 0, 'h', 'i', 0}...)
+	want = append(want, []byte{0, 0, 0, 0, 0, 0, 0}...)
+	want = append(want, make([]byte, 7)...)
+	want = append(want, []byte{1, 0, 0, 0, 1, 0, 0, 0, 0xab, 0}...)
+	want = append(want, make([]byte, 6)...)
+	wire, err := EncodeRawKeyFrame(RawKeyFrame{SequenceNumber: 1, Fields: fields})
+	if err != nil || !bytes.Equal(wire, want) {
+		t.Fatalf("wire=%x err=%v want=%x", wire, err, want)
+	}
+	meta := []RawFieldMeta{{Type: RawString, ValueRank: 1, ArrayDimensions: []uint32{3}, MaxStringLength: 3}, {Type: RawByteString, ValueRank: 1, ArrayDimensions: []uint32{2}, MaxStringLength: 2}}
+	got, used, err := DecodeRawKeyFrameWithMetadata(wire, meta)
+	if err != nil || used != len(wire) || !reflect.DeepEqual(got.Fields[0].Value, []any{"hi", ""}) || !reflect.DeepEqual(got.Fields[1].Value, []any{[]byte{0xab}}) {
+		t.Fatalf("got=%#v used=%d err=%v", got, used, err)
+	}
+	for _, tc := range []struct {
+		name  string
+		index int
+		value byte
+	}{{"nonzero element padding", 13, 1}, {"nonzero unused slot", 21, 1}, {"oversized element length", 7, 4}} {
+		t.Run(tc.name, func(t *testing.T) {
+			bad := append([]byte(nil), wire...)
+			bad[tc.index] = tc.value
+			if _, _, err := DecodeRawKeyFrameWithMetadata(bad, meta); err == nil {
+				t.Fatal("invalid wire accepted")
+			}
+		})
+	}
+	if _, _, err := DecodeRawKeyFrameWithMetadata(wire[:len(wire)-1], meta); err == nil {
+		t.Fatal("truncated padding accepted")
 	}
 }
 

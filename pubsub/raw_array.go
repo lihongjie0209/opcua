@@ -25,7 +25,15 @@ func rawFixedWidth(typ RawType) int {
 
 func rawArrayLayout(typ RawType, rank int32, dimensions []uint32, maxStringLength uint32) (int, int, error) {
 	width := rawFixedWidth(typ)
-	if rank != 1 || len(dimensions) != 1 || dimensions[0] == 0 || width == 0 || maxStringLength != 0 ||
+	if typ == RawString || typ == RawByteString {
+		if maxStringLength == 0 || maxStringLength > maxRawMessageBytes-4 {
+			return 0, 0, fmt.Errorf("unsupported or oversized RawData array metadata")
+		}
+		width = 4 + int(maxStringLength)
+	} else if maxStringLength != 0 {
+		return 0, 0, fmt.Errorf("unsupported or oversized RawData array metadata")
+	}
+	if rank != 1 || len(dimensions) != 1 || dimensions[0] == 0 || width == 0 ||
 		dimensions[0] > uint32((maxRawMessageBytes-4)/width) {
 		return 0, 0, fmt.Errorf("unsupported or oversized RawData array metadata")
 	}
@@ -59,8 +67,30 @@ func encodeRawArray(buf *bytes.Buffer, enc *ua.BinaryEncoder, field RawField) er
 		return err
 	}
 	for i, value := range values {
-		if err := writeRawField(enc, RawField{Type: field.Type, Value: value}); err != nil {
-			return fmt.Errorf("RawData array element %d: %w", i, err)
+		var writeErr error
+		if field.Type == RawString && value == "" {
+			writeErr = enc.WriteInt32(0)
+		} else if field.Type == RawByteString {
+			if bytesValue, ok := value.([]byte); ok && len(bytesValue) == 0 {
+				writeErr = enc.WriteInt32(0)
+			} else {
+				writeErr = writeRawField(enc, RawField{Type: field.Type, Value: value, MaxStringLength: field.MaxStringLength})
+			}
+		} else {
+			writeErr = writeRawField(enc, RawField{Type: field.Type, Value: value, MaxStringLength: field.MaxStringLength})
+		}
+		if writeErr != nil {
+			return fmt.Errorf("RawData array element %d: %w", i, writeErr)
+		}
+		if field.Type == RawString || field.Type == RawByteString {
+			actual := 0
+			switch v := value.(type) {
+			case string:
+				actual = len(v)
+			case []byte:
+				actual = len(v)
+			}
+			buf.Write(make([]byte, int(field.MaxStringLength)-actual))
 		}
 	}
 	buf.Write(make([]byte, (maximum-len(values))*width))
@@ -91,7 +121,13 @@ func decodeRawArray(dec *ua.BinaryDecoder, reader *bytes.Reader, meta RawFieldMe
 		values = make([]any, actual)
 	}
 	for i := 0; i < actual; i++ {
-		value, err := readRawField(dec, meta.Type)
+		var value any
+		var err error
+		if meta.Type == RawString || meta.Type == RawByteString {
+			value, err = readPaddedStringArrayElement(dec, reader, meta)
+		} else {
+			value, err = readRawField(dec, meta.Type)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("RawData array element %d: %w", i, err)
 		}

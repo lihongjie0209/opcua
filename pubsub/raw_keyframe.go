@@ -236,6 +236,14 @@ func DecodeRawKeyFrameWithMetadata(wire []byte, metadata []RawFieldMeta) (RawKey
 }
 
 func readPaddedString(dec *ua.BinaryDecoder, reader *bytes.Reader, meta RawFieldMeta) (any, error) {
+	return readPaddedStringValue(dec, reader, meta, true)
+}
+
+func readPaddedStringArrayElement(dec *ua.BinaryDecoder, reader *bytes.Reader, meta RawFieldMeta) (any, error) {
+	return readPaddedStringValue(dec, reader, meta, false)
+}
+
+func readPaddedStringValue(dec *ua.BinaryDecoder, reader *bytes.Reader, meta RawFieldMeta, allowNull bool) (any, error) {
 	if meta.MaxStringLength == 0 || meta.MaxStringLength > maxRawMessageBytes ||
 		int(meta.MaxStringLength)+4 > reader.Len() {
 		return nil, fmt.Errorf("invalid or truncated maximum string length")
@@ -244,7 +252,7 @@ func readPaddedString(dec *ua.BinaryDecoder, reader *bytes.Reader, meta RawField
 	if err := dec.ReadInt32(&length); err != nil {
 		return nil, err
 	}
-	if length < -1 || length > int32(meta.MaxStringLength) {
+	if length < -1 || !allowNull && length < 0 || length > int32(meta.MaxStringLength) {
 		return nil, fmt.Errorf("invalid string length")
 	}
 	actual := int(length)
