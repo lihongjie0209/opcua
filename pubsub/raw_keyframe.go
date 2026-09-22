@@ -30,6 +30,7 @@ const (
 const (
 	RawString        RawType = 12
 	RawByteString    RawType = 15
+	RawStructureType RawType = 22
 	RawOptionSetType RawType = 26
 )
 
@@ -37,6 +38,18 @@ const (
 type RawOptionSet struct {
 	Value     []byte
 	ValidBits []byte
+}
+
+// RawStructure is a dynamically described Structure value keyed by field name.
+type RawStructure struct{ Fields map[string]any }
+
+// RawStructureMeta is an ordered concrete Structure definition.
+type RawStructureMeta struct{ Fields []RawStructureFieldMeta }
+
+// RawStructureFieldMeta names one ordered field in a Structure definition.
+type RawStructureFieldMeta struct {
+	Name  string
+	Field RawFieldMeta
 }
 
 // RawField is a typed fixed-layout RawData value.
@@ -47,6 +60,7 @@ type RawField struct {
 	ValueRank       int32
 	ArrayDimensions []uint32
 	OptionSetLength uint32
+	Structure       *RawStructureMeta
 }
 
 // RawFieldMeta describes the fixed wire layout of a RawData field.
@@ -56,6 +70,7 @@ type RawFieldMeta struct {
 	ValueRank       int32
 	ArrayDimensions []uint32
 	OptionSetLength uint32
+	Structure       *RawStructureMeta
 }
 
 // RawKeyFrame is a scalar RawData DataSetMessage with a sequence number.
@@ -90,6 +105,15 @@ func EncodeRawKeyFrame(frame RawKeyFrame) ([]byte, error) {
 		}
 	}
 	for i, field := range frame.Fields {
+		if field.Type == RawStructureType {
+			if err := encodeRawStructure(&buf, enc, field, 1); err != nil {
+				return nil, fmt.Errorf("RawData field %d: %w", i, err)
+			}
+			continue
+		}
+		if field.Structure != nil {
+			return nil, fmt.Errorf("RawData field %d has unexpected Structure metadata", i)
+		}
 		if field.Type == RawOptionSetType {
 			if err := encodeRawOptionSet(&buf, enc, field); err != nil {
 				return nil, fmt.Errorf("RawData field %d: %w", i, err)
@@ -238,7 +262,11 @@ func DecodeRawKeyFrameWithMetadata(wire []byte, metadata []RawFieldMeta) (RawKey
 	for i, meta := range metadata {
 		var v any
 		var err error
-		if meta.Type == RawOptionSetType {
+		if meta.Type == RawStructureType {
+			v, err = decodeRawStructure(dec, reader, meta, 1)
+		} else if meta.Structure != nil {
+			return RawKeyFrame{}, 0, fmt.Errorf("RawData field %d has unexpected Structure metadata", i)
+		} else if meta.Type == RawOptionSetType {
 			v, err = decodeRawOptionSet(dec, reader, meta)
 		} else if meta.OptionSetLength != 0 {
 			return RawKeyFrame{}, 0, fmt.Errorf("RawData field %d has unexpected OptionSet length", i)
@@ -260,7 +288,7 @@ func DecodeRawKeyFrameWithMetadata(wire []byte, metadata []RawFieldMeta) (RawKey
 			return RawKeyFrame{}, 0, fmt.Errorf("RawData field %d: %w", i, err)
 		}
 		frame.Fields[i] = RawField{Type: meta.Type, Value: v, MaxStringLength: meta.MaxStringLength,
-			ValueRank: meta.ValueRank, ArrayDimensions: append([]uint32(nil), meta.ArrayDimensions...), OptionSetLength: meta.OptionSetLength}
+			ValueRank: meta.ValueRank, ArrayDimensions: append([]uint32(nil), meta.ArrayDimensions...), OptionSetLength: meta.OptionSetLength, Structure: meta.Structure}
 	}
 	return frame, len(wire) - reader.Len(), nil
 }
