@@ -1129,6 +1129,14 @@ func (dec *BinaryDecoder) readVariant(value *Variant, exact bool) error {
 			return nil
 
 		case VariantTypeNodeID:
+			if exact {
+				v, _, err := dec.readRawNodeID(false)
+				if err != nil {
+					return BadDecodingError
+				}
+				*value = v
+				return nil
+			}
 			var v NodeID
 			if err := dec.ReadNodeID(&v); err != nil {
 				return BadDecodingError
@@ -1137,6 +1145,26 @@ func (dec *BinaryDecoder) readVariant(value *Variant, exact bool) error {
 			return nil
 
 		case VariantTypeExpandedNodeID:
+			if exact {
+				node, flags, err := dec.readRawNodeID(true)
+				if err != nil {
+					return BadDecodingError
+				}
+				v := RawExpandedNodeID{NodeID: node, NamespaceURIPresent: flags&0x80 != 0, ServerIndexPresent: flags&0x40 != 0}
+				if v.NamespaceURIPresent {
+					v.NamespaceURI, err = dec.readNullableString()
+					if err != nil {
+						return BadDecodingError
+					}
+				}
+				if v.ServerIndexPresent {
+					if err := dec.ReadUInt32(&v.ServerIndex); err != nil {
+						return BadDecodingError
+					}
+				}
+				*value = v
+				return nil
+			}
 			var v ExpandedNodeID
 			if err := dec.ReadExpandedNodeID(&v); err != nil {
 				return BadDecodingError
@@ -1153,6 +1181,19 @@ func (dec *BinaryDecoder) readVariant(value *Variant, exact bool) error {
 			return nil
 
 		case VariantTypeQualifiedName:
+			if exact {
+				var v RawQualifiedName
+				if err := dec.ReadUInt16(&v.NamespaceIndex); err != nil {
+					return BadDecodingError
+				}
+				var err error
+				v.Name, err = dec.readNullableString()
+				if err != nil {
+					return BadDecodingError
+				}
+				*value = v
+				return nil
+			}
 			var v QualifiedName
 			if err := dec.ReadQualifiedName(&v); err != nil {
 				return BadDecodingError

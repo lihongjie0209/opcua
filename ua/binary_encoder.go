@@ -1089,12 +1089,43 @@ func (enc *BinaryEncoder) WriteVariant(value Variant) error {
 		if err := enc.WriteNodeID(v1); err != nil {
 			return BadEncodingError
 		}
+	case RawNodeID:
+		if err := enc.WriteByte(VariantTypeNodeID); err != nil {
+			return BadEncodingError
+		}
+		if err := enc.writeRawNodeID(v1, 0); err != nil {
+			return BadEncodingError
+		}
 	case ExpandedNodeID:
 		if err := enc.WriteByte(VariantTypeExpandedNodeID); err != nil {
 			return BadEncodingError
 		}
 		if err := enc.WriteExpandedNodeID(v1); err != nil {
 			return BadEncodingError
+		}
+	case RawExpandedNodeID:
+		if err := enc.WriteByte(VariantTypeExpandedNodeID); err != nil {
+			return BadEncodingError
+		}
+		var flags byte
+		if v1.NamespaceURIPresent {
+			flags |= 0x80
+		}
+		if v1.ServerIndexPresent {
+			flags |= 0x40
+		}
+		if err := enc.writeRawNodeID(v1.NodeID, flags); err != nil {
+			return BadEncodingError
+		}
+		if v1.NamespaceURIPresent {
+			if err := enc.writeNullableString(v1.NamespaceURI); err != nil {
+				return BadEncodingError
+			}
+		}
+		if v1.ServerIndexPresent {
+			if err := enc.WriteUInt32(v1.ServerIndex); err != nil {
+				return BadEncodingError
+			}
 		}
 	case StatusCode:
 		if err := enc.WriteByte(VariantTypeStatusCode); err != nil {
@@ -1108,6 +1139,16 @@ func (enc *BinaryEncoder) WriteVariant(value Variant) error {
 			return BadEncodingError
 		}
 		if err := enc.WriteQualifiedName(v1); err != nil {
+			return BadEncodingError
+		}
+	case RawQualifiedName:
+		if err := enc.WriteByte(VariantTypeQualifiedName); err != nil {
+			return BadEncodingError
+		}
+		if err := enc.WriteUInt16(v1.NamespaceIndex); err != nil {
+			return BadEncodingError
+		}
+		if err := enc.writeNullableString(v1.Name); err != nil {
 			return BadEncodingError
 		}
 	case LocalizedText:

@@ -69,6 +69,17 @@ func TestDataValueCodecPreservesNullableVariants(t *testing.T) {
 		{name: "raw datetime", value: ua.RawDateTime(-1), wire: []byte{1, ua.VariantTypeDateTime, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}},
 		{name: "raw guid", value: ua.RawGUID{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16},
 			wire: []byte{1, ua.VariantTypeGUID, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}},
+		{name: "null string NodeId", value: ua.RawNodeID{Kind: ua.RawNodeIDString, NamespaceIndex: 2, String: ua.NullableString{Null: true}},
+			wire: []byte{1, ua.VariantTypeNodeID, 3, 2, 0, 0xff, 0xff, 0xff, 0xff}},
+		{name: "empty opaque NodeId", value: ua.RawNodeID{Kind: ua.RawNodeIDOpaque, NamespaceIndex: 2, Opaque: ua.NullableByteString{Value: []byte{}}},
+			wire: []byte{1, ua.VariantTypeNodeID, 5, 2, 0, 0, 0, 0, 0}},
+		{name: "expanded flags", value: ua.RawExpandedNodeID{
+			NodeID:              ua.RawNodeID{Kind: ua.RawNodeIDNumeric, Numeric: 72},
+			NamespaceURIPresent: true, NamespaceURI: ua.NullableString{Value: "urn:x"},
+			ServerIndexPresent: true, ServerIndex: 3,
+		}, wire: []byte{1, ua.VariantTypeExpandedNodeID, 0xc0, 72, 5, 0, 0, 0, 'u', 'r', 'n', ':', 'x', 3, 0, 0, 0}},
+		{name: "null QualifiedName", value: ua.RawQualifiedName{NamespaceIndex: 2, Name: ua.NullableString{Null: true}},
+			wire: []byte{1, ua.VariantTypeQualifiedName, 2, 0, 0xff, 0xff, 0xff, 0xff}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
