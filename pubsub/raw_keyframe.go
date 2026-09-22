@@ -144,7 +144,16 @@ func EncodeRawKeyFrame(frame RawKeyFrame) ([]byte, error) {
 			return nil, fmt.Errorf("RawData field %d has unexpected Structure metadata", i)
 		}
 		if field.Type == RawOptionSetType {
-			if err := encodeRawOptionSet(&buf, enc, field); err != nil {
+			var err error
+			switch {
+			case field.ValueRank > 1:
+				err = encodeRawOptionSetMatrix(&buf, enc, field)
+			case field.ValueRank == 1:
+				err = encodeRawOptionSetArray(&buf, enc, field)
+			default:
+				err = encodeRawOptionSet(&buf, enc, field)
+			}
+			if err != nil {
 				return nil, fmt.Errorf("RawData field %d: %w", i, err)
 			}
 			continue
@@ -300,7 +309,14 @@ func DecodeRawKeyFrameWithMetadata(wire []byte, metadata []RawFieldMeta) (RawKey
 		} else if meta.Structure != nil {
 			return RawKeyFrame{}, 0, fmt.Errorf("RawData field %d has unexpected Structure metadata", i)
 		} else if meta.Type == RawOptionSetType {
-			v, err = decodeRawOptionSet(dec, reader, meta)
+			switch {
+			case meta.ValueRank > 1:
+				v, err = decodeRawOptionSetMatrix(dec, reader, meta)
+			case meta.ValueRank == 1:
+				v, err = decodeRawOptionSetArray(dec, reader, meta)
+			default:
+				v, err = decodeRawOptionSet(dec, reader, meta)
+			}
 		} else if meta.OptionSetLength != 0 {
 			return RawKeyFrame{}, 0, fmt.Errorf("RawData field %d has unexpected OptionSet length", i)
 		} else if meta.ValueRank > 1 {

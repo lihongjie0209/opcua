@@ -31,7 +31,7 @@ func TestRawKeyFrameOptionSetRejectsInvalid(t *testing.T) {
 		{"short value", RawField{Type: RawOptionSetType, OptionSetLength: 2, Value: RawOptionSet{Value: []byte{1}, ValidBits: []byte{1, 2}}}},
 		{"short valid bits", RawField{Type: RawOptionSetType, OptionSetLength: 2, Value: RawOptionSet{Value: []byte{1, 2}, ValidBits: []byte{1}}}},
 		{"wrong value type", RawField{Type: RawOptionSetType, OptionSetLength: 1, Value: []byte{1}}},
-		{"array", RawField{Type: RawOptionSetType, OptionSetLength: 1, ValueRank: 1, ArrayDimensions: []uint32{1}, Value: []any{RawOptionSet{Value: []byte{1}, ValidBits: []byte{1}}}}},
+		{"array element mismatch", RawField{Type: RawOptionSetType, OptionSetLength: 2, ValueRank: 1, ArrayDimensions: []uint32{1}, Value: []any{RawOptionSet{Value: []byte{1}, ValidBits: []byte{1}}}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if _, err := EncodeRawKeyFrame(RawKeyFrame{Fields: []RawField{tc.field}}); err == nil {
