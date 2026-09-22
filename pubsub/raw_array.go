@@ -14,10 +14,12 @@ func rawFixedWidth(typ RawType) int {
 		return 1
 	case RawInt16, RawUInt16:
 		return 2
-	case RawInt32, RawUInt32, RawFloat:
+	case RawInt32, RawUInt32, RawFloat, RawStatusCode:
 		return 4
-	case RawInt64, RawUInt64, RawDouble:
+	case RawInt64, RawUInt64, RawDouble, RawDateTime:
 		return 8
+	case RawGUID:
+		return 16
 	default:
 		return 0
 	}

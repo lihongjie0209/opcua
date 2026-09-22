@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"time"
 
 	"github.com/awcullen/opcua/ua"
+	"github.com/google/uuid"
 )
 
 // RawType is an OPC UA built-in scalar type supported in fixed RawData frames.
@@ -29,7 +31,10 @@ const (
 
 const (
 	RawString        RawType = 12
+	RawDateTime      RawType = 13
+	RawGUID          RawType = 14
 	RawByteString    RawType = 15
+	RawStatusCode    RawType = 19
 	RawStructureType RawType = 22
 	RawOptionSetType RawType = 26
 	RawUnionType     RawType = 27
@@ -271,6 +276,18 @@ func writeRawField(enc *ua.BinaryEncoder, field RawField) error {
 		if v, ok := field.Value.([]byte); ok && len(v) <= int(field.MaxStringLength) {
 			return enc.WriteByteString(ua.ByteString(v))
 		}
+	case RawDateTime:
+		if v, ok := field.Value.(time.Time); ok {
+			return enc.WriteDateTime(v)
+		}
+	case RawGUID:
+		if v, ok := field.Value.(uuid.UUID); ok {
+			return enc.WriteGUID(v)
+		}
+	case RawStatusCode:
+		if v, ok := field.Value.(ua.StatusCode); ok {
+			return enc.WriteStatusCode(v)
+		}
 	}
 	return fmt.Errorf("unsupported RawData type or value mismatch: %d", field.Type)
 }
@@ -438,6 +455,18 @@ func readRawField(dec *ua.BinaryDecoder, typ RawType) (any, error) {
 	case RawUInt64:
 		var v uint64
 		err := dec.ReadUInt64(&v)
+		return v, err
+	case RawDateTime:
+		var v time.Time
+		err := dec.ReadDateTime(&v)
+		return v, err
+	case RawGUID:
+		var v uuid.UUID
+		err := dec.ReadGUID(&v)
+		return v, err
+	case RawStatusCode:
+		var v ua.StatusCode
+		err := dec.ReadStatusCode(&v)
 		return v, err
 	case RawFloat:
 		var v float32
