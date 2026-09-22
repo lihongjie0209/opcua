@@ -917,6 +917,12 @@ func (dec *BinaryDecoder) ReadVariant(value *Variant) error {
 	return dec.readVariant(value, false)
 }
 
+// ReadVariantExact reads a Variant while preserving nullable and raw scalar
+// representations used by strict wire-profile adapters.
+func (dec *BinaryDecoder) ReadVariantExact(value *Variant) error {
+	return dec.readVariant(value, true)
+}
+
 func (dec *BinaryDecoder) readVariant(value *Variant, exact bool) error {
 	var b byte
 	if err := dec.ReadByte(&b); err != nil {

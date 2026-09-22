@@ -113,3 +113,27 @@ func TestDataValueCodecPreservesRawExtensionObject(t *testing.T) {
 		t.Fatalf("value=%#v", decoded.Value)
 	}
 }
+
+func TestExactDataValuePreservesRawFields(t *testing.T) {
+	status := uint32(0x80000000)
+	source := int64(-1)
+	server := int64(0x7fffffffffffffff)
+	sourcePico := uint16(10000)
+	serverPico := uint16(1)
+	want := ExactDataValue{
+		ValuePresent: true, Value: ua.RawDateTime(-2), StatusCode: &status,
+		SourceTimestamp: &source, SourcePicoseconds: &sourcePico,
+		ServerTimestamp: &server, ServerPicoseconds: &serverPico,
+	}
+	wire, err := EncodeExactDataValue(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, used, err := DecodeExactDataValuePrefix(append(wire, 0xaa))
+	if err != nil || used != len(wire) {
+		t.Fatalf("used=%d err=%v", used, err)
+	}
+	if !reflect.DeepEqual(decoded, want) {
+		t.Fatalf("decoded=%#v want=%#v", decoded, want)
+	}
+}
