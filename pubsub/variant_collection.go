@@ -224,8 +224,23 @@ func decodeExactVariantScalarValue(wire []byte) (ExactVariantValue, int, error) 
 			return ExactVariantValue{}, 0, err
 		}
 		return ExactVariantValue{Type: kind, DiagnosticInfo: &value}, used + 1, nil
-	case ua.VariantTypeVariant, 26, 27, 28, 29, 30, 31:
+	case ua.VariantTypeVariant:
 		return ExactVariantValue{}, 0, errors.New("unsupported exact Variant scalar type")
+	case 26, 27, 28, 29, 30, 31:
+		if len(wire) < 5 {
+			return ExactVariantValue{}, 0, errors.New("truncated reserved Variant scalar")
+		}
+		length := int32(binary.LittleEndian.Uint32(wire[1:]))
+		if length < -1 || length > maxUADPDynamicPayloadBytes || length >= 0 && int(length) > len(wire)-5 {
+			return ExactVariantValue{}, 0, errors.New("invalid reserved Variant scalar length")
+		}
+		value := ua.NullableByteString{Null: length == -1}
+		used := 5
+		if length >= 0 {
+			value.Value = append([]byte{}, wire[5:5+int(length)]...)
+			used += int(length)
+		}
+		return ExactVariantValue{Type: kind, Value: value}, used, nil
 	default:
 		value, used, err := DecodeExactVariantPrefix(wire)
 		if err != nil {

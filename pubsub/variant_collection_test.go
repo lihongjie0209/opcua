@@ -20,15 +20,20 @@ func TestExactVariantCollectionGoldenRoundTrip(t *testing.T) {
 		{"string array", ExactVariantValue{Type: 0x8c, Elements: []ExactVariantValue{{Type: 12, Value: ua.NullableString{Value: "x"}}, {Type: 12, Value: ua.NullableString{Null: true}}}}, []byte{0x8c, 2, 0, 0, 0, 1, 0, 0, 0, 'x', 0xff, 0xff, 0xff, 0xff}},
 		{"matrix", ExactVariantValue{Type: 0xc5, Elements: []ExactVariantValue{{Type: 5, Value: uint16(1)}, {Type: 5, Value: uint16(2)}}, Dimensions: []int32{1, 2}}, []byte{0xc5, 2, 0, 0, 0, 1, 0, 2, 0, 2, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0}},
 		{"variant array", ExactVariantValue{Type: 0x98, Elements: []ExactVariantValue{{Type: 0}, {Type: 5, Value: uint16(7)}}}, []byte{0x98, 2, 0, 0, 0, 0, 5, 7, 0}},
+		{"reserved decode array", ExactVariantValue{Type: 0x9a, Elements: []ExactVariantValue{{Type: 26, Value: ua.NullableByteString{Value: []byte{1}}}}}, []byte{0x9a, 1, 0, 0, 0, 1, 0, 0, 0, 1}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			wire, err := EncodeExactVariantValue(tc.value)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !bytes.Equal(wire, tc.wire) {
-				t.Fatalf("wire %x want %x", wire, tc.wire)
+			wire := tc.wire
+			if tc.name != "reserved decode array" {
+				var err error
+				wire, err = EncodeExactVariantValue(tc.value)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !bytes.Equal(wire, tc.wire) {
+					t.Fatalf("wire %x want %x", wire, tc.wire)
+				}
 			}
 			got, consumed, err := DecodeExactVariantValuePrefix(append(wire, 0xaa))
 			if err != nil {
