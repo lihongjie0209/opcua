@@ -48,8 +48,9 @@ type RawStructureMeta struct{ Fields []RawStructureFieldMeta }
 
 // RawStructureFieldMeta names one ordered field in a Structure definition.
 type RawStructureFieldMeta struct {
-	Name  string
-	Field RawFieldMeta
+	Name     string
+	Optional bool
+	Field    RawFieldMeta
 }
 
 // RawField is a typed fixed-layout RawData value.

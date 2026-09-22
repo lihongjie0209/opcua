@@ -3,6 +3,7 @@ package pubsub
 import (
 	"bytes"
 	"fmt"
+	"io"
 
 	"github.com/awcullen/opcua/ua"
 )
@@ -63,6 +64,7 @@ func rawStructureWidth(meta *RawStructureMeta, depth int) (int, error) {
 	}
 	names := make(map[string]struct{}, len(meta.Fields))
 	total := 0
+	optionalCount := 0
 	for index, named := range meta.Fields {
 		if named.Name == "" {
 			return 0, fmt.Errorf("RawData Structure field %d has empty name", index)
@@ -71,6 +73,12 @@ func rawStructureWidth(meta *RawStructureMeta, depth int) (int, error) {
 			return 0, fmt.Errorf("duplicate RawData Structure field %q", named.Name)
 		}
 		names[named.Name] = struct{}{}
+		if named.Optional {
+			optionalCount++
+			if optionalCount > 32 {
+				return 0, fmt.Errorf("RawData Structure has more than 32 optional fields")
+			}
+		}
 		width, err := rawStructureFieldWidth(named.Field, depth)
 		if err != nil {
 			return 0, fmt.Errorf("RawData Structure field %q: %w", named.Name, err)
@@ -79,6 +87,12 @@ func rawStructureWidth(meta *RawStructureMeta, depth int) (int, error) {
 			return 0, fmt.Errorf("RawData Structure exceeds size limit")
 		}
 		total += width
+	}
+	if optionalCount != 0 {
+		if total > maxRawMessageBytes-4 {
+			return 0, fmt.Errorf("RawData Structure exceeds size limit")
+		}
+		total += 4
 	}
 	return total, nil
 }
@@ -141,16 +155,46 @@ func encodeRawStructure(buf *bytes.Buffer, enc *ua.BinaryEncoder, field RawField
 		return fmt.Errorf("RawData Structure must be scalar")
 	}
 	value, ok := field.Value.(RawStructure)
-	if !ok || len(value.Fields) != len(field.Structure.Fields) {
+	if !ok || len(value.Fields) > len(field.Structure.Fields) {
 		return fmt.Errorf("RawData Structure value fields mismatch")
 	}
 	if buf.Len()+width > maxRawMessageBytes {
 		return fmt.Errorf("RawData Structure exceeds message size limit")
 	}
+	known := make(map[string]struct{}, len(field.Structure.Fields))
+	var mask uint32
+	optionalIndex := uint(0)
+	for _, named := range field.Structure.Fields {
+		known[named.Name] = struct{}{}
+		_, exists := value.Fields[named.Name]
+		if named.Optional {
+			if exists {
+				mask |= uint32(1) << optionalIndex
+			}
+			optionalIndex++
+		} else if !exists {
+			return fmt.Errorf("RawData Structure field %q is missing", named.Name)
+		}
+	}
+	for name := range value.Fields {
+		if _, exists := known[name]; !exists {
+			return fmt.Errorf("unknown RawData Structure field %q", name)
+		}
+	}
+	if optionalIndex != 0 {
+		if err := enc.WriteUInt32(mask); err != nil {
+			return err
+		}
+	}
 	for _, named := range field.Structure.Fields {
 		member, exists := value.Fields[named.Name]
 		if !exists {
-			return fmt.Errorf("RawData Structure field %q is missing", named.Name)
+			width, err := rawStructureFieldWidth(named.Field, depth)
+			if err != nil {
+				return err
+			}
+			buf.Write(make([]byte, width))
+			continue
 		}
 		if err := encodeRawStructureField(buf, enc, named.Field, member, depth); err != nil {
 			return fmt.Errorf("RawData Structure field %q: %w", named.Name, err)
@@ -194,7 +238,48 @@ func decodeRawStructure(dec *ua.BinaryDecoder, reader *bytes.Reader, meta RawFie
 		return RawStructure{}, fmt.Errorf("truncated RawData Structure")
 	}
 	value := RawStructure{Fields: make(map[string]any, len(meta.Structure.Fields))}
+	optionalCount := uint(0)
 	for _, named := range meta.Structure.Fields {
+		if named.Optional {
+			optionalCount++
+		}
+	}
+	var mask uint32
+	if optionalCount != 0 {
+		if err := dec.ReadUInt32(&mask); err != nil {
+			return RawStructure{}, err
+		}
+		valid := ^uint32(0)
+		if optionalCount < 32 {
+			valid = uint32(1)<<optionalCount - 1
+		}
+		if mask&^valid != 0 {
+			return RawStructure{}, fmt.Errorf("RawData Structure has unassigned EncodingMask bits")
+		}
+	}
+	optionalIndex := uint(0)
+	for _, named := range meta.Structure.Fields {
+		present := true
+		if named.Optional {
+			present = mask&(uint32(1)<<optionalIndex) != 0
+			optionalIndex++
+		}
+		if !present {
+			width, err := rawStructureFieldWidth(named.Field, depth)
+			if err != nil {
+				return RawStructure{}, err
+			}
+			padding := make([]byte, width)
+			if _, err := io.ReadFull(reader, padding); err != nil {
+				return RawStructure{}, err
+			}
+			for _, b := range padding {
+				if b != 0 {
+					return RawStructure{}, fmt.Errorf("nonzero optional RawData Structure padding")
+				}
+			}
+			continue
+		}
 		member, err := decodeRawStructureField(dec, reader, named.Field, depth)
 		if err != nil {
 			return RawStructure{}, fmt.Errorf("RawData Structure field %q: %w", named.Name, err)

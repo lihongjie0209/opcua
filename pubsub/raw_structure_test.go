@@ -2,6 +2,7 @@ package pubsub
 
 import (
 	"bytes"
+	"fmt"
 	"reflect"
 	"testing"
 )
@@ -93,5 +94,48 @@ func TestRawKeyFrameStructureArraysAndMatrix(t *testing.T) {
 	bad[len(bad)-1] = 1
 	if _, _, err := DecodeRawKeyFrameWithMetadata(bad, []RawFieldMeta{meta}); err == nil {
 		t.Fatal("nonzero nested matrix padding accepted")
+	}
+}
+
+func TestRawKeyFrameOptionalStructureFields(t *testing.T) {
+	t.Parallel()
+	meta := RawFieldMeta{Type: RawStructureType, Structure: &RawStructureMeta{Fields: []RawStructureFieldMeta{
+		{Name: "count", Field: RawFieldMeta{Type: RawUInt16}},
+		{Name: "label", Optional: true, Field: RawFieldMeta{Type: RawString, MaxStringLength: 2}},
+		{Name: "enabled", Field: RawFieldMeta{Type: RawBoolean}},
+		{Name: "samples", Optional: true, Field: RawFieldMeta{Type: RawUInt16, ValueRank: 1, ArrayDimensions: []uint32{2}}},
+	}}}
+	value := RawStructure{Fields: map[string]any{"count": uint16(42), "enabled": true, "samples": []any{uint16(9)}}}
+	want := []byte{0x0b, 0, 0, 2, 0, 0, 0, 42, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 9, 0, 0, 0}
+	wire, err := EncodeRawKeyFrame(RawKeyFrame{Fields: []RawField{{Type: RawStructureType, Structure: meta.Structure, Value: value}}})
+	if err != nil || !bytes.Equal(wire, want) {
+		t.Fatalf("wire=%x err=%v want=%x", wire, err, want)
+	}
+	got, used, err := DecodeRawKeyFrameWithMetadata(wire, []RawFieldMeta{meta})
+	if err != nil || used != len(wire) || !reflect.DeepEqual(got.Fields[0].Value, value) {
+		t.Fatalf("got=%#v used=%d err=%v", got, used, err)
+	}
+	for _, tc := range []struct {
+		name  string
+		index int
+		value byte
+	}{{"unassigned mask bit", 3, 4}, {"nonzero absent padding", 9, 1}} {
+		t.Run(tc.name, func(t *testing.T) {
+			bad := append([]byte(nil), wire...)
+			bad[tc.index] = tc.value
+			if _, _, err := DecodeRawKeyFrameWithMetadata(bad, []RawFieldMeta{meta}); err == nil {
+				t.Fatal("invalid optional Structure accepted")
+			}
+		})
+	}
+	if _, err := EncodeRawKeyFrame(RawKeyFrame{Fields: []RawField{{Type: RawStructureType, Structure: meta.Structure, Value: RawStructure{Fields: map[string]any{"enabled": true}}}}}); err == nil {
+		t.Fatal("missing mandatory field accepted")
+	}
+	fields := make([]RawStructureFieldMeta, 33)
+	for i := range fields {
+		fields[i] = RawStructureFieldMeta{Name: fmt.Sprintf("f%d", i), Optional: true, Field: RawFieldMeta{Type: RawByte}}
+	}
+	if _, err := RawFieldWidth(RawFieldMeta{Type: RawStructureType, Structure: &RawStructureMeta{Fields: fields}}); err == nil {
+		t.Fatal("more than 32 optional fields accepted")
 	}
 }
