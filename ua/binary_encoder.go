@@ -778,7 +778,11 @@ func (enc *BinaryEncoder) WriteExtensionObject(value ExtensionObject) error {
 		if raw.Encoding > 2 || raw.Encoding == 0 && len(raw.Body) != 0 {
 			return BadEncodingError
 		}
-		if err := enc.WriteNodeID(raw.TypeID); err != nil {
+		if raw.RawTypeID != nil {
+			if err := enc.writeRawNodeID(*raw.RawTypeID, 0); err != nil {
+				return BadEncodingError
+			}
+		} else if err := enc.WriteNodeID(raw.TypeID); err != nil {
 			return BadEncodingError
 		}
 		if err := enc.WriteByte(raw.Encoding); err != nil {

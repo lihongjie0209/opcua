@@ -120,8 +120,27 @@ func TestDataValueCodecPreservesRawExtensionObject(t *testing.T) {
 		t.Fatalf("used=%d err=%v", used, err)
 	}
 	got, ok := decoded.Value.(ua.RawExtensionObject)
-	if !ok || got.Encoding != want.Encoding || !bytes.Equal(got.Body, want.Body) || !reflect.DeepEqual(got.TypeID, want.TypeID) {
+	if !ok || got.Encoding != want.Encoding || !bytes.Equal(got.Body, want.Body) || got.RawTypeID == nil ||
+		got.RawTypeID.Kind != ua.RawNodeIDNumeric || got.RawTypeID.NamespaceIndex != 2 || got.RawTypeID.Numeric != 42 {
 		t.Fatalf("value=%#v", decoded.Value)
+	}
+}
+
+func TestDataValueCodecPreservesRawExtensionTypeID(t *testing.T) {
+	typeID := ua.RawNodeID{Kind: ua.RawNodeIDString, NamespaceIndex: 2,
+		String: ua.NullableString{Value: "type"}}
+	want := ua.RawExtensionObject{RawTypeID: &typeID, Encoding: 2, Body: []byte("<x/>")}
+	wire, err := EncodeDataValue(ua.DataValue{Value: want})
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, used, err := DecodeDataValuePrefix(wire)
+	if err != nil || used != len(wire) {
+		t.Fatalf("used=%d err=%v", used, err)
+	}
+	got, ok := decoded.Value.(ua.RawExtensionObject)
+	if !ok || !reflect.DeepEqual(got, want) {
+		t.Fatalf("value=%#v want=%#v", decoded.Value, want)
 	}
 }
 

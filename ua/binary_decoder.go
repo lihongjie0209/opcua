@@ -778,6 +778,35 @@ func (dec *BinaryDecoder) ReadExtensionObjectExact(value *ExtensionObject) error
 }
 
 func (dec *BinaryDecoder) readExtensionObject(value *ExtensionObject, exact bool) error {
+	if exact {
+		nodeID, _, err := dec.readRawNodeID(false)
+		if err != nil {
+			return BadDecodingError
+		}
+		var encoding byte
+		if err := dec.ReadByte(&encoding); err != nil {
+			return BadDecodingError
+		}
+		result := RawExtensionObject{RawTypeID: &nodeID, Encoding: encoding}
+		switch encoding {
+		case 0:
+			*value = result
+			return nil
+		case 1, 2:
+			var length int32
+			if err := dec.ReadInt32(&length); err != nil || length < 0 {
+				return BadDecodingError
+			}
+			result.Body = make([]byte, length)
+			if _, err := io.ReadFull(dec.r, result.Body); err != nil {
+				return BadDecodingError
+			}
+			*value = result
+			return nil
+		default:
+			return BadDecodingError
+		}
+	}
 	var nodeID NodeID
 	if err := dec.ReadNodeID(&nodeID); err != nil {
 		return BadDecodingError
@@ -788,23 +817,8 @@ func (dec *BinaryDecoder) readExtensionObject(value *ExtensionObject, exact bool
 	}
 	switch b {
 	case 0x00:
-		if exact {
-			*value = RawExtensionObject{TypeID: nodeID}
-		}
 		return nil
 	case 0x01:
-		if exact {
-			var n int32
-			if err := dec.ReadInt32(&n); err != nil || n < 0 {
-				return BadDecodingError
-			}
-			body := make([]byte, n)
-			if _, err := io.ReadFull(dec.r, body); err != nil {
-				return BadDecodingError
-			}
-			*value = RawExtensionObject{TypeID: nodeID, Encoding: b, Body: body}
-			return nil
-		}
 		id := ToExpandedNodeID(nodeID, dec.ec.NamespaceURIs())
 		// lookup type
 		typ, ok := FindTypeForBinaryEncodingID(id)
@@ -827,18 +841,6 @@ func (dec *BinaryDecoder) readExtensionObject(value *ExtensionObject, exact bool
 		}
 		return nil
 	case 0x02:
-		if exact {
-			var n int32
-			if err := dec.ReadInt32(&n); err != nil || n < 0 {
-				return BadDecodingError
-			}
-			body := make([]byte, n)
-			if _, err := io.ReadFull(dec.r, body); err != nil {
-				return BadDecodingError
-			}
-			*value = RawExtensionObject{TypeID: nodeID, Encoding: b, Body: body}
-			return nil
-		}
 		var body XMLElement
 		err := dec.ReadXMLElement(&body)
 		if err != nil {
