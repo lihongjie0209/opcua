@@ -28,9 +28,16 @@ const (
 )
 
 const (
-	RawString     RawType = 12
-	RawByteString RawType = 15
+	RawString        RawType = 12
+	RawByteString    RawType = 15
+	RawOptionSetType RawType = 26
 )
+
+// RawOptionSet is the fixed-width value and validity mask of an OPC UA OptionSet.
+type RawOptionSet struct {
+	Value     []byte
+	ValidBits []byte
+}
 
 // RawField is a typed fixed-layout RawData value.
 type RawField struct {
@@ -39,6 +46,7 @@ type RawField struct {
 	MaxStringLength uint32
 	ValueRank       int32
 	ArrayDimensions []uint32
+	OptionSetLength uint32
 }
 
 // RawFieldMeta describes the fixed wire layout of a RawData field.
@@ -47,6 +55,7 @@ type RawFieldMeta struct {
 	MaxStringLength uint32
 	ValueRank       int32
 	ArrayDimensions []uint32
+	OptionSetLength uint32
 }
 
 // RawKeyFrame is a scalar RawData DataSetMessage with a sequence number.
@@ -81,6 +90,15 @@ func EncodeRawKeyFrame(frame RawKeyFrame) ([]byte, error) {
 		}
 	}
 	for i, field := range frame.Fields {
+		if field.Type == RawOptionSetType {
+			if err := encodeRawOptionSet(&buf, enc, field); err != nil {
+				return nil, fmt.Errorf("RawData field %d: %w", i, err)
+			}
+			continue
+		}
+		if field.OptionSetLength != 0 {
+			return nil, fmt.Errorf("RawData field %d has unexpected OptionSet length", i)
+		}
 		if field.ValueRank > 1 {
 			if err := encodeRawMatrix(&buf, enc, field); err != nil {
 				return nil, fmt.Errorf("RawData field %d: %w", i, err)
@@ -220,7 +238,11 @@ func DecodeRawKeyFrameWithMetadata(wire []byte, metadata []RawFieldMeta) (RawKey
 	for i, meta := range metadata {
 		var v any
 		var err error
-		if meta.ValueRank > 1 {
+		if meta.Type == RawOptionSetType {
+			v, err = decodeRawOptionSet(dec, reader, meta)
+		} else if meta.OptionSetLength != 0 {
+			return RawKeyFrame{}, 0, fmt.Errorf("RawData field %d has unexpected OptionSet length", i)
+		} else if meta.ValueRank > 1 {
 			v, err = decodeRawMatrix(dec, reader, meta)
 		} else if meta.ValueRank == 1 {
 			v, err = decodeRawArray(dec, reader, meta)
@@ -238,7 +260,7 @@ func DecodeRawKeyFrameWithMetadata(wire []byte, metadata []RawFieldMeta) (RawKey
 			return RawKeyFrame{}, 0, fmt.Errorf("RawData field %d: %w", i, err)
 		}
 		frame.Fields[i] = RawField{Type: meta.Type, Value: v, MaxStringLength: meta.MaxStringLength,
-			ValueRank: meta.ValueRank, ArrayDimensions: append([]uint32(nil), meta.ArrayDimensions...)}
+			ValueRank: meta.ValueRank, ArrayDimensions: append([]uint32(nil), meta.ArrayDimensions...), OptionSetLength: meta.OptionSetLength}
 	}
 	return frame, len(wire) - reader.Len(), nil
 }
