@@ -774,6 +774,27 @@ func (enc *BinaryEncoder) WriteExtensionObject(value ExtensionObject) error {
 		}
 		return nil
 	}
+	if raw, ok := value.(RawExtensionObject); ok {
+		if raw.Encoding > 2 || raw.Encoding == 0 && len(raw.Body) != 0 {
+			return BadEncodingError
+		}
+		if err := enc.WriteNodeID(raw.TypeID); err != nil {
+			return BadEncodingError
+		}
+		if err := enc.WriteByte(raw.Encoding); err != nil {
+			return BadEncodingError
+		}
+		if raw.Encoding == 0 {
+			return nil
+		}
+		if err := enc.WriteInt32(int32(len(raw.Body))); err != nil {
+			return BadEncodingError
+		}
+		if _, err := enc.w.Write(raw.Body); err != nil {
+			return BadEncodingError
+		}
+		return nil
+	}
 	// lookup encoding id
 	typ := reflect.TypeOf(value)
 	if typ.Kind() == reflect.Ptr {
@@ -1080,6 +1101,13 @@ func (enc *BinaryEncoder) WriteVariant(value Variant) error {
 			return BadEncodingError
 		}
 		if err := enc.WriteLocalizedText(v1); err != nil {
+			return BadEncodingError
+		}
+	case RawExtensionObject:
+		if err := enc.WriteByte(VariantTypeExtensionObject); err != nil {
+			return BadEncodingError
+		}
+		if err := enc.WriteExtensionObject(v1); err != nil {
 			return BadEncodingError
 		}
 	case []bool:

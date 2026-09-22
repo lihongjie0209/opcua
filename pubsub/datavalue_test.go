@@ -86,3 +86,27 @@ func TestDataValueCodecPreservesNullableVariants(t *testing.T) {
 		})
 	}
 }
+
+func TestDataValueCodecPreservesRawExtensionObject(t *testing.T) {
+	want := ua.RawExtensionObject{
+		TypeID:   ua.NewNodeIDNumeric(2, 42),
+		Encoding: 1,
+		Body:     []byte{0xaa, 0xbb},
+	}
+	wire, err := EncodeDataValue(ua.DataValue{Value: want})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantWire := []byte{1, ua.VariantTypeExtensionObject, 1, 2, 42, 0, 1, 2, 0, 0, 0, 0xaa, 0xbb}
+	if !bytes.Equal(wire, wantWire) {
+		t.Fatalf("wire=%x want=%x", wire, wantWire)
+	}
+	decoded, used, err := DecodeDataValuePrefix(wire)
+	if err != nil || used != len(wire) {
+		t.Fatalf("used=%d err=%v", used, err)
+	}
+	got, ok := decoded.Value.(ua.RawExtensionObject)
+	if !ok || got.Encoding != want.Encoding || !bytes.Equal(got.Body, want.Body) || !reflect.DeepEqual(got.TypeID, want.TypeID) {
+		t.Fatalf("value=%#v", decoded.Value)
+	}
+}

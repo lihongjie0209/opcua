@@ -765,8 +765,19 @@ func (dec *BinaryDecoder) ReadLocalizedText(value *LocalizedText) error {
 	return nil
 }
 
-// ReadExtensionObject reads an Extensionobject.
+// ReadExtensionObject reads an ExtensionObject using the registered-type
+// compatibility model.
 func (dec *BinaryDecoder) ReadExtensionObject(value *ExtensionObject) error {
+	return dec.readExtensionObject(value, false)
+}
+
+// ReadExtensionObjectExact reads an ExtensionObject without discarding an
+// unregistered binary or XML body.
+func (dec *BinaryDecoder) ReadExtensionObjectExact(value *ExtensionObject) error {
+	return dec.readExtensionObject(value, true)
+}
+
+func (dec *BinaryDecoder) readExtensionObject(value *ExtensionObject, exact bool) error {
 	var nodeID NodeID
 	if err := dec.ReadNodeID(&nodeID); err != nil {
 		return BadDecodingError
@@ -777,8 +788,23 @@ func (dec *BinaryDecoder) ReadExtensionObject(value *ExtensionObject) error {
 	}
 	switch b {
 	case 0x00:
+		if exact {
+			*value = RawExtensionObject{TypeID: nodeID}
+		}
 		return nil
 	case 0x01:
+		if exact {
+			var n int32
+			if err := dec.ReadInt32(&n); err != nil || n < 0 {
+				return BadDecodingError
+			}
+			body := make([]byte, n)
+			if _, err := io.ReadFull(dec.r, body); err != nil {
+				return BadDecodingError
+			}
+			*value = RawExtensionObject{TypeID: nodeID, Encoding: b, Body: body}
+			return nil
+		}
 		id := ToExpandedNodeID(nodeID, dec.ec.NamespaceURIs())
 		// lookup type
 		typ, ok := FindTypeForBinaryEncodingID(id)
@@ -801,6 +827,18 @@ func (dec *BinaryDecoder) ReadExtensionObject(value *ExtensionObject) error {
 		}
 		return nil
 	case 0x02:
+		if exact {
+			var n int32
+			if err := dec.ReadInt32(&n); err != nil || n < 0 {
+				return BadDecodingError
+			}
+			body := make([]byte, n)
+			if _, err := io.ReadFull(dec.r, body); err != nil {
+				return BadDecodingError
+			}
+			*value = RawExtensionObject{TypeID: nodeID, Encoding: b, Body: body}
+			return nil
+		}
 		var body XMLElement
 		err := dec.ReadXMLElement(&body)
 		if err != nil {
@@ -1110,7 +1148,7 @@ func (dec *BinaryDecoder) readVariant(value *Variant, exact bool) error {
 
 		case VariantTypeExtensionObject:
 			var v ExtensionObject
-			if err := dec.ReadExtensionObject(&v); err != nil {
+			if err := dec.readExtensionObject(&v, exact); err != nil {
 				return err
 			}
 			*value = v

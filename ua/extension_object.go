@@ -7,3 +7,11 @@ package ua
 //
 //	func RegisterBinaryEncodingID(typ reflect.Type, id ExpandedNodeID)
 type ExtensionObject any
+
+// RawExtensionObject preserves an ExtensionObject body whose concrete type is
+// unknown to the type registry. Encoding is 0 (none), 1 (binary), or 2 (XML).
+type RawExtensionObject struct {
+	TypeID   NodeID
+	Encoding byte
+	Body     []byte
+}
