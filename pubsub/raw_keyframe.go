@@ -37,12 +37,16 @@ type RawField struct {
 	Type            RawType
 	Value           any
 	MaxStringLength uint32
+	ValueRank       int32
+	ArrayDimensions []uint32
 }
 
 // RawFieldMeta describes the fixed wire layout of a RawData field.
 type RawFieldMeta struct {
 	Type            RawType
 	MaxStringLength uint32
+	ValueRank       int32
+	ArrayDimensions []uint32
 }
 
 // RawKeyFrame is a scalar RawData DataSetMessage with a sequence number.
@@ -77,6 +81,15 @@ func EncodeRawKeyFrame(frame RawKeyFrame) ([]byte, error) {
 		}
 	}
 	for i, field := range frame.Fields {
+		if field.ValueRank == 1 {
+			if err := encodeRawArray(&buf, enc, field); err != nil {
+				return nil, fmt.Errorf("RawData field %d: %w", i, err)
+			}
+			continue
+		}
+		if field.ValueRank != 0 && field.ValueRank != -1 || len(field.ArrayDimensions) != 0 {
+			return nil, fmt.Errorf("RawData field %d has unsupported ValueRank or ArrayDimensions", i)
+		}
 		if field.Type == RawString || field.Type == RawByteString {
 			if field.MaxStringLength == 0 || field.MaxStringLength > maxRawMessageBytes ||
 				buf.Len()+4+int(field.MaxStringLength) > maxRawMessageBytes {
@@ -201,7 +214,11 @@ func DecodeRawKeyFrameWithMetadata(wire []byte, metadata []RawFieldMeta) (RawKey
 	for i, meta := range metadata {
 		var v any
 		var err error
-		if meta.Type == RawString || meta.Type == RawByteString {
+		if meta.ValueRank == 1 {
+			v, err = decodeRawArray(dec, reader, meta)
+		} else if meta.ValueRank != 0 && meta.ValueRank != -1 || len(meta.ArrayDimensions) != 0 {
+			return RawKeyFrame{}, 0, fmt.Errorf("RawData field %d has unsupported ValueRank or ArrayDimensions", i)
+		} else if meta.Type == RawString || meta.Type == RawByteString {
 			v, err = readPaddedString(dec, reader, meta)
 		} else {
 			if meta.MaxStringLength != 0 {
@@ -212,7 +229,8 @@ func DecodeRawKeyFrameWithMetadata(wire []byte, metadata []RawFieldMeta) (RawKey
 		if err != nil {
 			return RawKeyFrame{}, 0, fmt.Errorf("RawData field %d: %w", i, err)
 		}
-		frame.Fields[i] = RawField{Type: meta.Type, Value: v, MaxStringLength: meta.MaxStringLength}
+		frame.Fields[i] = RawField{Type: meta.Type, Value: v, MaxStringLength: meta.MaxStringLength,
+			ValueRank: meta.ValueRank, ArrayDimensions: append([]uint32(nil), meta.ArrayDimensions...)}
 	}
 	return frame, len(wire) - reader.Len(), nil
 }
