@@ -4,6 +4,7 @@ package pubsub
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"math"
 
 	"github.com/awcullen/opcua/ua"
@@ -26,10 +27,22 @@ const (
 	RawDouble
 )
 
+const (
+	RawString     RawType = 12
+	RawByteString RawType = 15
+)
+
 // RawField is a typed fixed-layout RawData value.
 type RawField struct {
-	Type  RawType
-	Value any
+	Type            RawType
+	Value           any
+	MaxStringLength uint32
+}
+
+// RawFieldMeta describes the fixed wire layout of a RawData field.
+type RawFieldMeta struct {
+	Type            RawType
+	MaxStringLength uint32
 }
 
 // RawKeyFrame is a scalar RawData DataSetMessage with a sequence number.
@@ -64,8 +77,24 @@ func EncodeRawKeyFrame(frame RawKeyFrame) ([]byte, error) {
 		}
 	}
 	for i, field := range frame.Fields {
+		if field.Type == RawString || field.Type == RawByteString {
+			if field.MaxStringLength == 0 || field.MaxStringLength > maxRawMessageBytes ||
+				buf.Len()+4+int(field.MaxStringLength) > maxRawMessageBytes {
+				return nil, fmt.Errorf("RawData field %d has invalid maximum length", i)
+			}
+		}
 		if err := writeRawField(enc, field); err != nil {
 			return nil, fmt.Errorf("RawData field %d: %w", i, err)
+		}
+		if field.Type == RawString || field.Type == RawByteString {
+			var actual int
+			switch v := field.Value.(type) {
+			case string:
+				actual = len(v)
+			case []byte:
+				actual = len(v)
+			}
+			buf.Write(make([]byte, int(field.MaxStringLength)-actual))
 		}
 		if buf.Len() > maxRawMessageBytes {
 			return nil, fmt.Errorf("RawData message exceeds size limit")
@@ -126,12 +155,29 @@ func writeRawField(enc *ua.BinaryEncoder, field RawField) error {
 			}
 			return enc.WriteDouble(v)
 		}
+	case RawString:
+		if v, ok := field.Value.(string); ok && len(v) <= int(field.MaxStringLength) {
+			return enc.WriteString(v)
+		}
+	case RawByteString:
+		if v, ok := field.Value.([]byte); ok && len(v) <= int(field.MaxStringLength) {
+			return enc.WriteByteString(ua.ByteString(v))
+		}
 	}
 	return fmt.Errorf("unsupported RawData type or value mismatch: %d", field.Type)
 }
 
 // DecodeRawKeyFrame decodes ordered scalar fields and returns consumed bytes.
 func DecodeRawKeyFrame(wire []byte, metadata []RawType) (RawKeyFrame, int, error) {
+	fields := make([]RawFieldMeta, len(metadata))
+	for i, typ := range metadata {
+		fields[i] = RawFieldMeta{Type: typ}
+	}
+	return DecodeRawKeyFrameWithMetadata(wire, fields)
+}
+
+// DecodeRawKeyFrameWithMetadata validates and consumes a metadata-defined layout.
+func DecodeRawKeyFrameWithMetadata(wire []byte, metadata []RawFieldMeta) (RawKeyFrame, int, error) {
 	if len(wire) > maxRawMessageBytes || len(metadata) == 0 || len(metadata) > 1024 || len(wire) < 3 {
 		return RawKeyFrame{}, 0, fmt.Errorf("invalid RawData size or metadata")
 	}
@@ -152,14 +198,58 @@ func DecodeRawKeyFrame(wire []byte, metadata []RawType) (RawKeyFrame, int, error
 		}
 		frame.Status = &status
 	}
-	for i, typ := range metadata {
-		v, err := readRawField(dec, typ)
+	for i, meta := range metadata {
+		var v any
+		var err error
+		if meta.Type == RawString || meta.Type == RawByteString {
+			v, err = readPaddedString(dec, reader, meta)
+		} else {
+			if meta.MaxStringLength != 0 {
+				return RawKeyFrame{}, 0, fmt.Errorf("RawData field %d has unexpected maximum length", i)
+			}
+			v, err = readRawField(dec, meta.Type)
+		}
 		if err != nil {
 			return RawKeyFrame{}, 0, fmt.Errorf("RawData field %d: %w", i, err)
 		}
-		frame.Fields[i] = RawField{Type: typ, Value: v}
+		frame.Fields[i] = RawField{Type: meta.Type, Value: v, MaxStringLength: meta.MaxStringLength}
 	}
 	return frame, len(wire) - reader.Len(), nil
+}
+
+func readPaddedString(dec *ua.BinaryDecoder, reader *bytes.Reader, meta RawFieldMeta) (any, error) {
+	if meta.MaxStringLength == 0 || meta.MaxStringLength > maxRawMessageBytes ||
+		int(meta.MaxStringLength)+4 > reader.Len() {
+		return nil, fmt.Errorf("invalid or truncated maximum string length")
+	}
+	var length int32
+	if err := dec.ReadInt32(&length); err != nil {
+		return nil, err
+	}
+	if length < -1 || length > int32(meta.MaxStringLength) {
+		return nil, fmt.Errorf("invalid string length")
+	}
+	actual := int(length)
+	if actual < 0 {
+		actual = 0
+	}
+	value := make([]byte, actual)
+	if _, err := io.ReadFull(reader, value); err != nil {
+		return nil, err
+	}
+	padding := make([]byte, int(meta.MaxStringLength)-actual)
+	if _, err := io.ReadFull(reader, padding); err != nil {
+		return nil, err
+	}
+	for _, b := range padding {
+		if b != 0 {
+			return nil, fmt.Errorf("nonzero RawData padding")
+		}
+	}
+	if meta.Type == RawString {
+		return string(value), nil
+	}
+	return value, nil
 }
 
 func readRawField(dec *ua.BinaryDecoder, typ RawType) (any, error) {

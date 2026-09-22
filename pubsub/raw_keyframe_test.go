@@ -47,3 +47,56 @@ func TestRawKeyFrameRejectsInvalid(t *testing.T) {
 		t.Fatal("expected truncated field error")
 	}
 }
+
+func TestRawKeyFramePaddedStrings(t *testing.T) {
+	t.Parallel()
+	frame := RawKeyFrame{SequenceNumber: 1, Fields: []RawField{
+		{Type: RawString, Value: "hi", MaxStringLength: 4},
+		{Type: RawByteString, Value: []byte{0xab}, MaxStringLength: 3},
+	}}
+	want := []byte{0x0b, 1, 0, 2, 0, 0, 0, 'h', 'i', 0, 0, 1, 0, 0, 0, 0xab, 0, 0}
+	wire, err := EncodeRawKeyFrame(frame)
+	if err != nil || !bytes.Equal(wire, want) {
+		t.Fatalf("EncodeRawKeyFrame() = %x, %v; want %x", wire, err, want)
+	}
+	got, used, err := DecodeRawKeyFrameWithMetadata(wire, []RawFieldMeta{
+		{Type: RawString, MaxStringLength: 4},
+		{Type: RawByteString, MaxStringLength: 3},
+	})
+	if err != nil || used != len(wire) || got.Fields[0].Value != "hi" || !bytes.Equal(got.Fields[1].Value.([]byte), []byte{0xab}) {
+		t.Fatalf("DecodeRawKeyFrameWithMetadata() = %#v, %d, %v", got, used, err)
+	}
+}
+
+func TestRawKeyFramePaddedStringRejectsInvalid(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		field RawField
+	}{
+		{"missing maximum", RawField{Type: RawString, Value: "x"}},
+		{"oversized", RawField{Type: RawString, Value: "abc", MaxStringLength: 2}},
+		{"wrong type", RawField{Type: RawByteString, Value: "x", MaxStringLength: 2}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := EncodeRawKeyFrame(RawKeyFrame{Fields: []RawField{tt.field}}); err == nil {
+				t.Fatal("expected rejection")
+			}
+		})
+	}
+	valid, err := EncodeRawKeyFrame(RawKeyFrame{Fields: []RawField{{Type: RawString, Value: "a", MaxStringLength: 2}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	valid[len(valid)-1] = 1
+	if _, _, err := DecodeRawKeyFrameWithMetadata(valid, []RawFieldMeta{{Type: RawString, MaxStringLength: 2}}); err == nil {
+		t.Fatal("nonzero padding accepted")
+	}
+	if _, _, err := DecodeRawKeyFrameWithMetadata(valid[:len(valid)-1], []RawFieldMeta{{Type: RawString, MaxStringLength: 2}}); err == nil {
+		t.Fatal("truncated padding accepted")
+	}
+	if _, _, err := DecodeRawKeyFrame([]byte{0x0b, 1, 0, 0xff, 0xff, 0xff, 0x7f}, []RawType{RawString}); err == nil {
+		t.Fatal("type-only decoder accepted String")
+	}
+}
