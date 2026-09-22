@@ -135,7 +135,16 @@ func EncodeRawKeyFrame(frame RawKeyFrame) ([]byte, error) {
 			return nil, fmt.Errorf("RawData field %d has unexpected Union metadata", i)
 		}
 		if field.Type == RawStructureType {
-			if err := encodeRawStructure(&buf, enc, field, 1); err != nil {
+			var err error
+			switch {
+			case field.ValueRank > 1:
+				err = encodeRawStructureMatrix(&buf, enc, field, 1)
+			case field.ValueRank == 1:
+				err = encodeRawStructureArray(&buf, enc, field, 1)
+			default:
+				err = encodeRawStructure(&buf, enc, field, 1)
+			}
+			if err != nil {
 				return nil, fmt.Errorf("RawData field %d: %w", i, err)
 			}
 			continue
@@ -305,7 +314,14 @@ func DecodeRawKeyFrameWithMetadata(wire []byte, metadata []RawFieldMeta) (RawKey
 		} else if meta.Union != nil {
 			return RawKeyFrame{}, 0, fmt.Errorf("RawData field %d has unexpected Union metadata", i)
 		} else if meta.Type == RawStructureType {
-			v, err = decodeRawStructure(dec, reader, meta, 1)
+			switch {
+			case meta.ValueRank > 1:
+				v, err = decodeRawStructureMatrix(dec, reader, meta, 1)
+			case meta.ValueRank == 1:
+				v, err = decodeRawStructureArray(dec, reader, meta, 1)
+			default:
+				v, err = decodeRawStructure(dec, reader, meta, 1)
+			}
 		} else if meta.Structure != nil {
 			return RawKeyFrame{}, 0, fmt.Errorf("RawData field %d has unexpected Structure metadata", i)
 		} else if meta.Type == RawOptionSetType {

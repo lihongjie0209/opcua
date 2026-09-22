@@ -115,6 +115,16 @@ func rawStructureWidth(meta *RawStructureMeta, depth int) (int, error) {
 
 func rawStructureFieldWidth(meta RawFieldMeta, depth int) (int, error) {
 	if meta.ValueRank > 0 {
+		if meta.Type == RawStructureType {
+			width, maximum, err := rawStructureCollectionLayout(meta, depth+1)
+			if err != nil {
+				return 0, err
+			}
+			if meta.ValueRank == 1 {
+				return 4 + maximum*width, nil
+			}
+			return 4 + 4*int(meta.ValueRank) + maximum*width, nil
+		}
 		if meta.Type == RawOptionSetType {
 			width, maximum, err := rawOptionSetCollectionLayout(meta)
 			if err != nil {
@@ -236,6 +246,12 @@ func encodeRawStructure(buf *bytes.Buffer, enc *ua.BinaryEncoder, field RawField
 
 func encodeRawStructureField(buf *bytes.Buffer, enc *ua.BinaryEncoder, meta RawFieldMeta, value any, depth int) error {
 	field := RawField{Type: meta.Type, Value: value, MaxStringLength: meta.MaxStringLength, ValueRank: meta.ValueRank, ArrayDimensions: meta.ArrayDimensions, OptionSetLength: meta.OptionSetLength, Structure: meta.Structure, Union: meta.Union}
+	if meta.Type == RawStructureType && meta.ValueRank > 0 {
+		if meta.ValueRank > 1 {
+			return encodeRawStructureMatrix(buf, enc, field, depth+1)
+		}
+		return encodeRawStructureArray(buf, enc, field, depth+1)
+	}
 	if meta.Type == RawOptionSetType {
 		if meta.ValueRank > 1 {
 			return encodeRawOptionSetMatrix(buf, enc, field)
@@ -332,6 +348,12 @@ func decodeRawStructure(dec *ua.BinaryDecoder, reader *bytes.Reader, meta RawFie
 }
 
 func decodeRawStructureField(dec *ua.BinaryDecoder, reader *bytes.Reader, meta RawFieldMeta, depth int) (any, error) {
+	if meta.Type == RawStructureType && meta.ValueRank > 0 {
+		if meta.ValueRank > 1 {
+			return decodeRawStructureMatrix(dec, reader, meta, depth+1)
+		}
+		return decodeRawStructureArray(dec, reader, meta, depth+1)
+	}
 	if meta.Type == RawOptionSetType {
 		if meta.ValueRank > 1 {
 			return decodeRawOptionSetMatrix(dec, reader, meta)

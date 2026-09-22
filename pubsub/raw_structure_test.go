@@ -51,7 +51,7 @@ func TestRawKeyFrameStructureRejectsInvalid(t *testing.T) {
 		{"missing value", RawField{Type: RawStructureType, Structure: validMeta, Value: RawStructure{Fields: map[string]any{}}}},
 		{"extra value", RawField{Type: RawStructureType, Structure: validMeta, Value: RawStructure{Fields: map[string]any{"value": uint16(1), "extra": true}}}},
 		{"wrong field type", RawField{Type: RawStructureType, Structure: validMeta, Value: RawStructure{Fields: map[string]any{"value": int16(1)}}}},
-		{"array structure", RawField{Type: RawStructureType, Structure: validMeta, ValueRank: 1, ArrayDimensions: []uint32{1}, Value: []any{}}},
+		{"invalid structure array", RawField{Type: RawStructureType, Structure: validMeta, ValueRank: 1, ArrayDimensions: []uint32{0}, Value: []any{}}},
 		{"duplicate names", RawField{Type: RawStructureType, Structure: &RawStructureMeta{Fields: []RawStructureFieldMeta{{Name: "x", Field: RawFieldMeta{Type: RawByte}}, {Name: "x", Field: RawFieldMeta{Type: RawByte}}}}, Value: RawStructure{Fields: map[string]any{"x": byte(1)}}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
