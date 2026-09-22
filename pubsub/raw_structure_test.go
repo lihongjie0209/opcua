@@ -70,3 +70,28 @@ func TestRawKeyFrameStructureRejectsInvalid(t *testing.T) {
 		t.Fatal("truncated Structure accepted")
 	}
 }
+
+func TestRawKeyFrameStructureArraysAndMatrix(t *testing.T) {
+	t.Parallel()
+	meta := RawFieldMeta{Type: RawStructureType, Structure: &RawStructureMeta{Fields: []RawStructureFieldMeta{
+		{Name: "samples", Field: RawFieldMeta{Type: RawUInt16, ValueRank: 1, ArrayDimensions: []uint32{3}}},
+		{Name: "labels", Field: RawFieldMeta{Type: RawString, ValueRank: 2, ArrayDimensions: []uint32{2, 2}, MaxStringLength: 2}},
+	}}}
+	value := RawStructure{Fields: map[string]any{
+		"samples": []any{uint16(1), uint16(2)},
+		"labels":  RawMatrix{Dimensions: []int32{1, 2}, Values: []any{"a", "b"}},
+	}}
+	wire, err := EncodeRawKeyFrame(RawKeyFrame{Fields: []RawField{{Type: RawStructureType, Structure: meta.Structure, Value: value}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, used, err := DecodeRawKeyFrameWithMetadata(wire, []RawFieldMeta{meta})
+	if err != nil || used != len(wire) || !reflect.DeepEqual(got.Fields[0].Value, value) {
+		t.Fatalf("got=%#v used=%d err=%v", got, used, err)
+	}
+	bad := append([]byte(nil), wire...)
+	bad[len(bad)-1] = 1
+	if _, _, err := DecodeRawKeyFrameWithMetadata(bad, []RawFieldMeta{meta}); err == nil {
+		t.Fatal("nonzero nested matrix padding accepted")
+	}
+}

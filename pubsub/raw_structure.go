@@ -84,8 +84,25 @@ func rawStructureWidth(meta *RawStructureMeta, depth int) (int, error) {
 }
 
 func rawStructureFieldWidth(meta RawFieldMeta, depth int) (int, error) {
+	if meta.ValueRank > 0 {
+		if meta.Type == RawStructureType || meta.Type == RawOptionSetType || meta.Structure != nil || meta.OptionSetLength != 0 {
+			return 0, fmt.Errorf("unsupported Structure array element type")
+		}
+		if meta.ValueRank == 1 {
+			width, maximum, err := rawArrayLayout(meta.Type, meta.ValueRank, meta.ArrayDimensions, meta.MaxStringLength)
+			if err != nil {
+				return 0, err
+			}
+			return 4 + maximum*width, nil
+		}
+		width, maximum, err := rawMatrixLayout(meta.Type, meta.ValueRank, meta.ArrayDimensions, meta.MaxStringLength)
+		if err != nil {
+			return 0, err
+		}
+		return 4 + 4*int(meta.ValueRank) + maximum*width, nil
+	}
 	if meta.ValueRank != 0 && meta.ValueRank != -1 || len(meta.ArrayDimensions) != 0 {
-		return 0, fmt.Errorf("Structure arrays are not supported")
+		return 0, fmt.Errorf("invalid Structure field rank")
 	}
 	switch meta.Type {
 	case RawStructureType:
@@ -144,6 +161,12 @@ func encodeRawStructure(buf *bytes.Buffer, enc *ua.BinaryEncoder, field RawField
 
 func encodeRawStructureField(buf *bytes.Buffer, enc *ua.BinaryEncoder, meta RawFieldMeta, value any, depth int) error {
 	field := RawField{Type: meta.Type, Value: value, MaxStringLength: meta.MaxStringLength, ValueRank: meta.ValueRank, ArrayDimensions: meta.ArrayDimensions, OptionSetLength: meta.OptionSetLength, Structure: meta.Structure}
+	if meta.ValueRank > 1 {
+		return encodeRawMatrix(buf, enc, field)
+	}
+	if meta.ValueRank == 1 {
+		return encodeRawArray(buf, enc, field)
+	}
 	switch meta.Type {
 	case RawStructureType:
 		return encodeRawStructure(buf, enc, field, depth+1)
@@ -182,6 +205,12 @@ func decodeRawStructure(dec *ua.BinaryDecoder, reader *bytes.Reader, meta RawFie
 }
 
 func decodeRawStructureField(dec *ua.BinaryDecoder, reader *bytes.Reader, meta RawFieldMeta, depth int) (any, error) {
+	if meta.ValueRank > 1 {
+		return decodeRawMatrix(dec, reader, meta)
+	}
+	if meta.ValueRank == 1 {
+		return decodeRawArray(dec, reader, meta)
+	}
 	switch meta.Type {
 	case RawStructureType:
 		return decodeRawStructure(dec, reader, meta, depth+1)
