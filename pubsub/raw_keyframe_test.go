@@ -123,6 +123,13 @@ func TestRawKeyFrameOneDimensionalPaddedStringArrays(t *testing.T) {
 			}
 		})
 	}
+	nullElement := append([]byte(nil), wire...)
+	for i := 7; i < 11; i++ {
+		nullElement[i] = 0xff
+	}
+	if _, _, err := DecodeRawKeyFrameWithMetadata(nullElement, meta); err == nil {
+		t.Fatal("null array element accepted")
+	}
 	if _, _, err := DecodeRawKeyFrameWithMetadata(wire[:len(wire)-1], meta); err == nil {
 		t.Fatal("truncated padding accepted")
 	}
