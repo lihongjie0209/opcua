@@ -81,6 +81,12 @@ func EncodeRawKeyFrame(frame RawKeyFrame) ([]byte, error) {
 		}
 	}
 	for i, field := range frame.Fields {
+		if field.ValueRank > 1 {
+			if err := encodeRawMatrix(&buf, enc, field); err != nil {
+				return nil, fmt.Errorf("RawData field %d: %w", i, err)
+			}
+			continue
+		}
 		if field.ValueRank == 1 {
 			if err := encodeRawArray(&buf, enc, field); err != nil {
 				return nil, fmt.Errorf("RawData field %d: %w", i, err)
@@ -214,7 +220,9 @@ func DecodeRawKeyFrameWithMetadata(wire []byte, metadata []RawFieldMeta) (RawKey
 	for i, meta := range metadata {
 		var v any
 		var err error
-		if meta.ValueRank == 1 {
+		if meta.ValueRank > 1 {
+			v, err = decodeRawMatrix(dec, reader, meta)
+		} else if meta.ValueRank == 1 {
 			v, err = decodeRawArray(dec, reader, meta)
 		} else if meta.ValueRank != 0 && meta.ValueRank != -1 || len(meta.ArrayDimensions) != 0 {
 			return RawKeyFrame{}, 0, fmt.Errorf("RawData field %d has unsupported ValueRank or ArrayDimensions", i)
