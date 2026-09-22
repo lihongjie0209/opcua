@@ -59,7 +59,9 @@ func DecodeExactVariantPrefix(wire []byte) (ua.Variant, int, error) {
 }
 
 func supportedExactVariantPrimitive(kind byte) bool {
-	return kind <= ua.VariantTypeXMLElement || kind == ua.VariantTypeStatusCode
+	return kind <= ua.VariantTypeXMLElement || kind == ua.VariantTypeNodeID ||
+		kind == ua.VariantTypeExpandedNodeID || kind == ua.VariantTypeStatusCode ||
+		kind == ua.VariantTypeQualifiedName || kind == ua.VariantTypeExtensionObject
 }
 
 func validateExactVariantPrimitive(value ua.Variant) error {
@@ -84,8 +86,57 @@ func validateExactVariantPrimitive(value ua.Variant) error {
 			return errors.New("invalid nullable Variant XmlElement")
 		}
 		return nil
+	case ua.RawNodeID:
+		return validateExactRawNodeID(value)
+	case ua.RawExpandedNodeID:
+		if err := validateExactRawNodeID(value.NodeID); err != nil {
+			return err
+		}
+		if value.NamespaceURIPresent && (value.NamespaceURI.Null || value.NamespaceURI.Value == "" ||
+			!utf8.ValidString(value.NamespaceURI.Value)) {
+			return errors.New("invalid flagged ExpandedNodeId NamespaceUri")
+		}
+		if value.ServerIndexPresent && value.ServerIndex == 0 {
+			return errors.New("invalid flagged ExpandedNodeId ServerIndex")
+		}
+		return nil
+	case ua.RawQualifiedName:
+		if value.Name.Null && value.Name.Value != "" || !utf8.ValidString(value.Name.Value) {
+			return errors.New("invalid exact QualifiedName")
+		}
+		return nil
+	case ua.RawExtensionObject:
+		if value.RawTypeID == nil {
+			return errors.New("exact ExtensionObject requires raw TypeId")
+		}
+		if err := validateExactRawNodeID(*value.RawTypeID); err != nil {
+			return err
+		}
+		if value.Encoding > 2 || value.Encoding == 0 && len(value.Body) != 0 {
+			return errors.New("invalid exact ExtensionObject encoding")
+		}
+		return nil
 	default:
-		return errors.New("unsupported primitive Variant value")
+		return errors.New("unsupported exact Variant scalar value")
+	}
+}
+
+func validateExactRawNodeID(value ua.RawNodeID) error {
+	switch value.Kind {
+	case ua.RawNodeIDNumeric, ua.RawNodeIDGUID:
+		return nil
+	case ua.RawNodeIDString:
+		if value.String.Null && value.String.Value != "" || !utf8.ValidString(value.String.Value) {
+			return errors.New("invalid exact String NodeId")
+		}
+		return nil
+	case ua.RawNodeIDOpaque:
+		if value.Opaque.Null && len(value.Opaque.Value) != 0 {
+			return errors.New("invalid exact Opaque NodeId")
+		}
+		return nil
+	default:
+		return errors.New("unsupported exact NodeId kind")
 	}
 }
 
