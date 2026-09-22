@@ -86,6 +86,14 @@ func DecodeExactDataValuePrefix(wire []byte) (ExactDataValue, int, error) {
 	if len(wire) == 0 || wire[0]&0xc0 != 0 {
 		return ExactDataValue{}, 0, errors.New("invalid DataValue mask")
 	}
+	if wire[0]&1 != 0 {
+		if len(wire) < 2 || wire[1] == ua.VariantTypeNull || wire[1]&0xc0 != 0 || wire[1] >= ua.VariantTypeDataValue {
+			return ExactDataValue{}, 0, errors.New("unsupported inner DataValue Variant type")
+		}
+		if _, _, err := DecodeExactVariantPrefix(wire[1:]); err != nil {
+			return ExactDataValue{}, 0, err
+		}
+	}
 	limit := len(wire)
 	if limit > maxUADPDynamicPayloadBytes {
 		limit = maxUADPDynamicPayloadBytes

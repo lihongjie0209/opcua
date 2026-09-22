@@ -167,3 +167,17 @@ func TestExactDataValuePreservesRawFields(t *testing.T) {
 		t.Fatalf("decoded=%#v want=%#v", decoded, want)
 	}
 }
+
+func TestDecodeExactDataValuePrefixRejectsInvalidInnerVariant(t *testing.T) {
+	for _, wire := range [][]byte{
+		{1, 0},
+		{1, 1, 2},
+		{1, 21, 1, 0, 0, 0, 0},
+		{1, 23, 0},
+		{1, 0x81, 0, 0, 0, 0},
+	} {
+		if _, _, err := DecodeExactDataValuePrefix(wire); err == nil {
+			t.Fatalf("expected inner Variant %x to fail", wire)
+		}
+	}
+}
