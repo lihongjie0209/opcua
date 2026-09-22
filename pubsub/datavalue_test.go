@@ -2,6 +2,7 @@ package pubsub
 
 import (
 	"bytes"
+	"reflect"
 	"testing"
 	"time"
 
@@ -39,15 +40,49 @@ func TestDataValueCodec(t *testing.T) {
 		decoded.ServerPicoseconds != want.ServerPicoseconds {
 		t.Fatalf("decoded=%+v used=%d", decoded, used)
 	}
-	if got, ok := decoded.Value.(ua.ByteString); !ok || got != want.Value {
+	if got, ok := decoded.Value.(ua.NullableByteString); !ok || got.Null || !bytes.Equal(got.Value, []byte{0, 255}) {
 		t.Fatalf("value=%T(%v)", decoded.Value, decoded.Value)
 	}
 }
 
 func TestDecodeDataValuePrefixRejectsMalformed(t *testing.T) {
-	for _, wire := range [][]byte{{}, {0x40}, {0x01, 0x3f}, {0x01, ua.VariantTypeUInt64, 1}} {
+	for _, wire := range [][]byte{{}, {0x40}, {0x01, 0x3f}, {0x01, ua.VariantTypeUInt64, 1},
+		{0x01, ua.VariantTypeString, 0xfe, 0xff, 0xff, 0xff}} {
 		if _, _, err := DecodeDataValuePrefix(wire); err == nil {
 			t.Fatalf("accepted malformed DataValue %x", wire)
 		}
+	}
+}
+
+func TestDataValueCodecPreservesNullableVariants(t *testing.T) {
+	tests := []struct {
+		name  string
+		value ua.Variant
+		wire  []byte
+	}{
+		{name: "null string", value: ua.NullableString{Null: true}, wire: []byte{1, ua.VariantTypeString, 0xff, 0xff, 0xff, 0xff}},
+		{name: "empty string", value: ua.NullableString{}, wire: []byte{1, ua.VariantTypeString, 0, 0, 0, 0}},
+		{name: "null bytes", value: ua.NullableByteString{Null: true}, wire: []byte{1, ua.VariantTypeByteString, 0xff, 0xff, 0xff, 0xff}},
+		{name: "empty bytes", value: ua.NullableByteString{Value: []byte{}}, wire: []byte{1, ua.VariantTypeByteString, 0, 0, 0, 0}},
+		{name: "null xml", value: ua.NullableXMLElement{Null: true}, wire: []byte{1, ua.VariantTypeXMLElement, 0xff, 0xff, 0xff, 0xff}},
+		{name: "empty xml", value: ua.NullableXMLElement{}, wire: []byte{1, ua.VariantTypeXMLElement, 0, 0, 0, 0}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			wire, err := EncodeDataValue(ua.DataValue{Value: tt.value})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(wire, tt.wire) {
+				t.Fatalf("wire=%x want=%x", wire, tt.wire)
+			}
+			decoded, used, err := DecodeDataValuePrefix(wire)
+			if err != nil || used != len(wire) {
+				t.Fatalf("used=%d err=%v", used, err)
+			}
+			if !reflect.DeepEqual(decoded.Value, tt.value) {
+				t.Fatalf("value=%#v want=%#v", decoded.Value, tt.value)
+			}
+		})
 	}
 }

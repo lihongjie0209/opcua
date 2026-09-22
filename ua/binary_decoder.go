@@ -812,8 +812,18 @@ func (dec *BinaryDecoder) ReadExtensionObject(value *ExtensionObject) error {
 	}
 }
 
-// ReadDataValue reads a DataValue.
+// ReadDataValue reads a DataValue using the compatibility Variant model.
 func (dec *BinaryDecoder) ReadDataValue(value *DataValue) error {
+	return dec.readDataValue(value, false)
+}
+
+// ReadDataValueExact reads a DataValue while preserving null versus empty
+// String, ByteString, and XmlElement Variant values.
+func (dec *BinaryDecoder) ReadDataValueExact(value *DataValue) error {
+	return dec.readDataValue(value, true)
+}
+
+func (dec *BinaryDecoder) readDataValue(value *DataValue, exact bool) error {
 	var (
 		v                 Variant
 		statusCode        StatusCode
@@ -831,7 +841,7 @@ func (dec *BinaryDecoder) ReadDataValue(value *DataValue) error {
 		return BadDecodingError
 	}
 	if (b & 1) != 0 {
-		if err := dec.ReadVariant(&v); err != nil {
+		if err := dec.readVariant(&v, exact); err != nil {
 			return BadDecodingError
 		}
 	}
@@ -864,8 +874,12 @@ func (dec *BinaryDecoder) ReadDataValue(value *DataValue) error {
 	return nil
 }
 
-// ReadVariant reads a Variant.
+// ReadVariant reads a Variant using the compatibility value model.
 func (dec *BinaryDecoder) ReadVariant(value *Variant) error {
+	return dec.readVariant(value, false)
+}
+
+func (dec *BinaryDecoder) readVariant(value *Variant, exact bool) error {
 	var b byte
 	if err := dec.ReadByte(&b); err != nil {
 		return BadDecodingError
@@ -967,6 +981,22 @@ func (dec *BinaryDecoder) ReadVariant(value *Variant) error {
 			return nil
 
 		case VariantTypeString:
+			if exact {
+				var n int32
+				if err := dec.ReadInt32(&n); err != nil || n < -1 {
+					return BadDecodingError
+				}
+				if n == -1 {
+					*value = NullableString{Null: true}
+					return nil
+				}
+				bs := make([]byte, n)
+				if _, err := io.ReadFull(dec.r, bs); err != nil {
+					return BadDecodingError
+				}
+				*value = NullableString{Value: string(bs)}
+				return nil
+			}
 			var v string
 			if err := dec.ReadString(&v); err != nil {
 				return BadDecodingError
@@ -991,6 +1021,22 @@ func (dec *BinaryDecoder) ReadVariant(value *Variant) error {
 			return nil
 
 		case VariantTypeByteString:
+			if exact {
+				var n int32
+				if err := dec.ReadInt32(&n); err != nil || n < -1 {
+					return BadDecodingError
+				}
+				if n == -1 {
+					*value = NullableByteString{Null: true}
+					return nil
+				}
+				bs := make([]byte, n)
+				if _, err := io.ReadFull(dec.r, bs); err != nil {
+					return BadDecodingError
+				}
+				*value = NullableByteString{Value: bs}
+				return nil
+			}
 			var v ByteString
 			if err := dec.ReadByteString(&v); err != nil {
 				return BadDecodingError
@@ -999,6 +1045,22 @@ func (dec *BinaryDecoder) ReadVariant(value *Variant) error {
 			return nil
 
 		case VariantTypeXMLElement:
+			if exact {
+				var n int32
+				if err := dec.ReadInt32(&n); err != nil || n < -1 {
+					return BadDecodingError
+				}
+				if n == -1 {
+					*value = NullableXMLElement{Null: true}
+					return nil
+				}
+				bs := make([]byte, n)
+				if _, err := io.ReadFull(dec.r, bs); err != nil {
+					return BadDecodingError
+				}
+				*value = NullableXMLElement{Value: string(bs)}
+				return nil
+			}
 			var v XMLElement
 			if err := dec.ReadXMLElement(&v); err != nil {
 				return BadDecodingError

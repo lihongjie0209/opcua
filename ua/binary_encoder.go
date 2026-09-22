@@ -980,6 +980,19 @@ func (enc *BinaryEncoder) WriteVariant(value Variant) error {
 		if err := enc.WriteString(v1); err != nil {
 			return BadEncodingError
 		}
+	case NullableString:
+		if err := enc.WriteByte(VariantTypeString); err != nil {
+			return BadEncodingError
+		}
+		if v1.Null {
+			return enc.WriteInt32(-1)
+		}
+		if err := enc.WriteInt32(int32(len(v1.Value))); err != nil {
+			return BadEncodingError
+		}
+		if _, err := enc.w.Write([]byte(v1.Value)); err != nil {
+			return BadEncodingError
+		}
 	case time.Time:
 		if err := enc.WriteByte(VariantTypeDateTime); err != nil {
 			return BadEncodingError
@@ -1001,11 +1014,37 @@ func (enc *BinaryEncoder) WriteVariant(value Variant) error {
 		if err := enc.WriteByteString(v1); err != nil {
 			return BadEncodingError
 		}
+	case NullableByteString:
+		if err := enc.WriteByte(VariantTypeByteString); err != nil {
+			return BadEncodingError
+		}
+		if v1.Null {
+			return enc.WriteInt32(-1)
+		}
+		if err := enc.WriteInt32(int32(len(v1.Value))); err != nil {
+			return BadEncodingError
+		}
+		if _, err := enc.w.Write(v1.Value); err != nil {
+			return BadEncodingError
+		}
 	case XMLElement:
 		if err := enc.WriteByte(VariantTypeXMLElement); err != nil {
 			return BadEncodingError
 		}
 		if err := enc.WriteXMLElement(v1); err != nil {
+			return BadEncodingError
+		}
+	case NullableXMLElement:
+		if err := enc.WriteByte(VariantTypeXMLElement); err != nil {
+			return BadEncodingError
+		}
+		if v1.Null {
+			return enc.WriteInt32(-1)
+		}
+		if err := enc.WriteInt32(int32(len(v1.Value))); err != nil {
+			return BadEncodingError
+		}
+		if _, err := enc.w.Write([]byte(v1.Value)); err != nil {
 			return BadEncodingError
 		}
 	case NodeID:

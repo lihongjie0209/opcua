@@ -35,7 +35,7 @@ func DecodeDataValuePrefix(wire []byte) (ua.DataValue, int, error) {
 	reader := bytes.NewReader(wire[:limit])
 	dec := ua.NewBinaryDecoder(reader, ua.NewEncodingContext())
 	var value ua.DataValue
-	if err := dec.ReadDataValue(&value); err != nil {
+	if err := dec.ReadDataValueExact(&value); err != nil {
 		return ua.DataValue{}, 0, err
 	}
 	return value, limit - reader.Len(), nil
