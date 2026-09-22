@@ -1021,11 +1021,25 @@ func (enc *BinaryEncoder) WriteVariant(value Variant) error {
 		if err := enc.WriteDateTime(v1); err != nil {
 			return BadEncodingError
 		}
+	case RawDateTime:
+		if err := enc.WriteByte(VariantTypeDateTime); err != nil {
+			return BadEncodingError
+		}
+		if err := enc.WriteInt64(int64(v1)); err != nil {
+			return BadEncodingError
+		}
 	case uuid.UUID:
 		if err := enc.WriteByte(VariantTypeGUID); err != nil {
 			return BadEncodingError
 		}
 		if err := enc.WriteGUID(v1); err != nil {
+			return BadEncodingError
+		}
+	case RawGUID:
+		if err := enc.WriteByte(VariantTypeGUID); err != nil {
+			return BadEncodingError
+		}
+		if _, err := enc.w.Write(v1[:]); err != nil {
 			return BadEncodingError
 		}
 	case ByteString:

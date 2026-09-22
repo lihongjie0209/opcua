@@ -1043,6 +1043,14 @@ func (dec *BinaryDecoder) readVariant(value *Variant, exact bool) error {
 			return nil
 
 		case VariantTypeDateTime:
+			if exact {
+				var v int64
+				if err := dec.ReadInt64(&v); err != nil {
+					return BadDecodingError
+				}
+				*value = RawDateTime(v)
+				return nil
+			}
 			var v time.Time
 			if err := dec.ReadDateTime(&v); err != nil {
 				return BadDecodingError
@@ -1051,6 +1059,14 @@ func (dec *BinaryDecoder) readVariant(value *Variant, exact bool) error {
 			return nil
 
 		case VariantTypeGUID:
+			if exact {
+				var v RawGUID
+				if _, err := io.ReadFull(dec.r, v[:]); err != nil {
+					return BadDecodingError
+				}
+				*value = v
+				return nil
+			}
 			var v uuid.UUID
 			if err := dec.ReadGUID(&v); err != nil {
 				return BadDecodingError

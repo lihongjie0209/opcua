@@ -19,3 +19,9 @@ type NullableXMLElement struct {
 	Value string
 	Null  bool
 }
+
+// RawDateTime preserves the signed 100 ns tick count exactly as encoded.
+type RawDateTime int64
+
+// RawGUID preserves the 16 encoded GUID bytes without UUID field reordering.
+type RawGUID [16]byte

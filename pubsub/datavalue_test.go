@@ -66,6 +66,9 @@ func TestDataValueCodecPreservesNullableVariants(t *testing.T) {
 		{name: "empty bytes", value: ua.NullableByteString{Value: []byte{}}, wire: []byte{1, ua.VariantTypeByteString, 0, 0, 0, 0}},
 		{name: "null xml", value: ua.NullableXMLElement{Null: true}, wire: []byte{1, ua.VariantTypeXMLElement, 0xff, 0xff, 0xff, 0xff}},
 		{name: "empty xml", value: ua.NullableXMLElement{}, wire: []byte{1, ua.VariantTypeXMLElement, 0, 0, 0, 0}},
+		{name: "raw datetime", value: ua.RawDateTime(-1), wire: []byte{1, ua.VariantTypeDateTime, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}},
+		{name: "raw guid", value: ua.RawGUID{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16},
+			wire: []byte{1, ua.VariantTypeGUID, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
