@@ -419,6 +419,26 @@ func TestDataValue(t *testing.T) {
 	}
 }
 
+func TestDataValueRejectsInvalidVariant(t *testing.T) {
+	tests := []struct {
+		name string
+		wire []byte
+	}{
+		{name: "reserved DataValue mask", wire: []byte{0x40}},
+		{name: "reserved variant type", wire: []byte{0x01, 0x3f}},
+		{name: "truncated scalar", wire: []byte{0x01, ua.VariantTypeUInt64, 0x01}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dec := ua.NewBinaryDecoder(bytes.NewReader(tt.wire), ua.NewEncodingContext())
+			var value ua.DataValue
+			if err := dec.ReadDataValue(&value); err == nil {
+				t.Fatal("ReadDataValue accepted an invalid inner Variant")
+			}
+		})
+	}
+}
+
 func TestEnum(t *testing.T) {
 	cases := []struct {
 		in    ua.MessageSecurityMode

@@ -827,10 +827,12 @@ func (dec *BinaryDecoder) ReadDataValue(value *DataValue) error {
 	if err := dec.ReadByte(&b); err != nil {
 		return BadDecodingError
 	}
+	if b&0xC0 != 0 {
+		return BadDecodingError
+	}
 	if (b & 1) != 0 {
 		if err := dec.ReadVariant(&v); err != nil {
-			// return BadDecodingError
-			statusCode = BadDataTypeIDUnknown
+			return BadDecodingError
 		}
 	}
 	if (b&2) != 0 && statusCode == 0 {
