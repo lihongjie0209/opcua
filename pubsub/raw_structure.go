@@ -10,6 +10,12 @@ import (
 
 // RawFieldWidth validates metadata and returns its fixed RawData wire width.
 func RawFieldWidth(meta RawFieldMeta) (int, error) {
+	if meta.Type == RawUnionType {
+		return rawUnionFieldWidth(meta, 1)
+	}
+	if meta.Union != nil {
+		return 0, fmt.Errorf("unexpected RawData Union metadata")
+	}
 	if meta.Type == RawStructureType {
 		return rawStructureFieldWidth(meta, 0)
 	}
@@ -99,7 +105,7 @@ func rawStructureWidth(meta *RawStructureMeta, depth int) (int, error) {
 
 func rawStructureFieldWidth(meta RawFieldMeta, depth int) (int, error) {
 	if meta.ValueRank > 0 {
-		if meta.Type == RawStructureType || meta.Type == RawOptionSetType || meta.Structure != nil || meta.OptionSetLength != 0 {
+		if meta.Type == RawStructureType || meta.Type == RawOptionSetType || meta.Type == RawUnionType || meta.Structure != nil || meta.Union != nil || meta.OptionSetLength != 0 {
 			return 0, fmt.Errorf("unsupported Structure array element type")
 		}
 		if meta.ValueRank == 1 {
@@ -119,23 +125,28 @@ func rawStructureFieldWidth(meta RawFieldMeta, depth int) (int, error) {
 		return 0, fmt.Errorf("invalid Structure field rank")
 	}
 	switch meta.Type {
+	case RawUnionType:
+		if meta.Structure != nil || meta.MaxStringLength != 0 || meta.OptionSetLength != 0 {
+			return 0, fmt.Errorf("invalid nested Union metadata")
+		}
+		return rawUnionWidth(meta.Union, depth+1)
 	case RawStructureType:
-		if meta.MaxStringLength != 0 || meta.OptionSetLength != 0 {
+		if meta.Union != nil || meta.MaxStringLength != 0 || meta.OptionSetLength != 0 {
 			return 0, fmt.Errorf("invalid nested Structure metadata")
 		}
 		return rawStructureWidth(meta.Structure, depth+1)
 	case RawOptionSetType:
-		if meta.Structure != nil || meta.MaxStringLength != 0 {
+		if meta.Structure != nil || meta.Union != nil || meta.MaxStringLength != 0 {
 			return 0, fmt.Errorf("invalid OptionSet metadata")
 		}
 		return rawOptionSetWidth(meta.OptionSetLength)
 	case RawString, RawByteString:
-		if meta.Structure != nil || meta.OptionSetLength != 0 || meta.MaxStringLength == 0 || meta.MaxStringLength > maxRawMessageBytes-4 {
+		if meta.Structure != nil || meta.Union != nil || meta.OptionSetLength != 0 || meta.MaxStringLength == 0 || meta.MaxStringLength > maxRawMessageBytes-4 {
 			return 0, fmt.Errorf("invalid string metadata")
 		}
 		return 4 + int(meta.MaxStringLength), nil
 	default:
-		if meta.Structure != nil || meta.OptionSetLength != 0 || meta.MaxStringLength != 0 {
+		if meta.Structure != nil || meta.Union != nil || meta.OptionSetLength != 0 || meta.MaxStringLength != 0 {
 			return 0, fmt.Errorf("unexpected field metadata")
 		}
 		width := rawFixedWidth(meta.Type)
@@ -204,7 +215,7 @@ func encodeRawStructure(buf *bytes.Buffer, enc *ua.BinaryEncoder, field RawField
 }
 
 func encodeRawStructureField(buf *bytes.Buffer, enc *ua.BinaryEncoder, meta RawFieldMeta, value any, depth int) error {
-	field := RawField{Type: meta.Type, Value: value, MaxStringLength: meta.MaxStringLength, ValueRank: meta.ValueRank, ArrayDimensions: meta.ArrayDimensions, OptionSetLength: meta.OptionSetLength, Structure: meta.Structure}
+	field := RawField{Type: meta.Type, Value: value, MaxStringLength: meta.MaxStringLength, ValueRank: meta.ValueRank, ArrayDimensions: meta.ArrayDimensions, OptionSetLength: meta.OptionSetLength, Structure: meta.Structure, Union: meta.Union}
 	if meta.ValueRank > 1 {
 		return encodeRawMatrix(buf, enc, field)
 	}
@@ -212,6 +223,8 @@ func encodeRawStructureField(buf *bytes.Buffer, enc *ua.BinaryEncoder, meta RawF
 		return encodeRawArray(buf, enc, field)
 	}
 	switch meta.Type {
+	case RawUnionType:
+		return encodeRawUnion(buf, enc, field, depth+1)
 	case RawStructureType:
 		return encodeRawStructure(buf, enc, field, depth+1)
 	case RawOptionSetType:
@@ -297,6 +310,8 @@ func decodeRawStructureField(dec *ua.BinaryDecoder, reader *bytes.Reader, meta R
 		return decodeRawArray(dec, reader, meta)
 	}
 	switch meta.Type {
+	case RawUnionType:
+		return decodeRawUnion(dec, reader, meta, depth+1)
 	case RawStructureType:
 		return decodeRawStructure(dec, reader, meta, depth+1)
 	case RawOptionSetType:

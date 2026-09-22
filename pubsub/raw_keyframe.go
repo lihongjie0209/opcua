@@ -32,6 +32,7 @@ const (
 	RawByteString    RawType = 15
 	RawStructureType RawType = 22
 	RawOptionSetType RawType = 26
+	RawUnionType     RawType = 27
 )
 
 // RawOptionSet is the fixed-width value and validity mask of an OPC UA OptionSet.
@@ -53,6 +54,22 @@ type RawStructureFieldMeta struct {
 	Field    RawFieldMeta
 }
 
+// RawUnion is a dynamically described Union value. SwitchField is one-based;
+// zero denotes the null Union and requires Value to be nil.
+type RawUnion struct {
+	SwitchField uint32
+	Value       any
+}
+
+// RawUnionMeta is an ordered concrete Union definition.
+type RawUnionMeta struct{ Fields []RawUnionFieldMeta }
+
+// RawUnionFieldMeta names one alternative in a Union definition.
+type RawUnionFieldMeta struct {
+	Name  string
+	Field RawFieldMeta
+}
+
 // RawField is a typed fixed-layout RawData value.
 type RawField struct {
 	Type            RawType
@@ -62,6 +79,7 @@ type RawField struct {
 	ArrayDimensions []uint32
 	OptionSetLength uint32
 	Structure       *RawStructureMeta
+	Union           *RawUnionMeta
 }
 
 // RawFieldMeta describes the fixed wire layout of a RawData field.
@@ -72,6 +90,7 @@ type RawFieldMeta struct {
 	ArrayDimensions []uint32
 	OptionSetLength uint32
 	Structure       *RawStructureMeta
+	Union           *RawUnionMeta
 }
 
 // RawKeyFrame is a scalar RawData DataSetMessage with a sequence number.
@@ -106,6 +125,15 @@ func EncodeRawKeyFrame(frame RawKeyFrame) ([]byte, error) {
 		}
 	}
 	for i, field := range frame.Fields {
+		if field.Type == RawUnionType {
+			if err := encodeRawUnion(&buf, enc, field, 1); err != nil {
+				return nil, fmt.Errorf("RawData field %d: %w", i, err)
+			}
+			continue
+		}
+		if field.Union != nil {
+			return nil, fmt.Errorf("RawData field %d has unexpected Union metadata", i)
+		}
 		if field.Type == RawStructureType {
 			if err := encodeRawStructure(&buf, enc, field, 1); err != nil {
 				return nil, fmt.Errorf("RawData field %d: %w", i, err)
@@ -263,7 +291,11 @@ func DecodeRawKeyFrameWithMetadata(wire []byte, metadata []RawFieldMeta) (RawKey
 	for i, meta := range metadata {
 		var v any
 		var err error
-		if meta.Type == RawStructureType {
+		if meta.Type == RawUnionType {
+			v, err = decodeRawUnion(dec, reader, meta, 1)
+		} else if meta.Union != nil {
+			return RawKeyFrame{}, 0, fmt.Errorf("RawData field %d has unexpected Union metadata", i)
+		} else if meta.Type == RawStructureType {
 			v, err = decodeRawStructure(dec, reader, meta, 1)
 		} else if meta.Structure != nil {
 			return RawKeyFrame{}, 0, fmt.Errorf("RawData field %d has unexpected Structure metadata", i)
@@ -289,7 +321,7 @@ func DecodeRawKeyFrameWithMetadata(wire []byte, metadata []RawFieldMeta) (RawKey
 			return RawKeyFrame{}, 0, fmt.Errorf("RawData field %d: %w", i, err)
 		}
 		frame.Fields[i] = RawField{Type: meta.Type, Value: v, MaxStringLength: meta.MaxStringLength,
-			ValueRank: meta.ValueRank, ArrayDimensions: append([]uint32(nil), meta.ArrayDimensions...), OptionSetLength: meta.OptionSetLength, Structure: meta.Structure}
+			ValueRank: meta.ValueRank, ArrayDimensions: append([]uint32(nil), meta.ArrayDimensions...), OptionSetLength: meta.OptionSetLength, Structure: meta.Structure, Union: meta.Union}
 	}
 	return frame, len(wire) - reader.Len(), nil
 }
