@@ -2,6 +2,7 @@ package pubsub
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"math"
 	"unicode/utf8"
@@ -46,6 +47,11 @@ func DecodeExactVariantPrefix(wire []byte) (ua.Variant, int, error) {
 	if kind == ua.VariantTypeBoolean && (len(wire) < 2 || wire[1] > 1) {
 		return nil, 0, errors.New("noncanonical Variant Boolean")
 	}
+	if kind == ua.VariantTypeLocalizedText {
+		if err := validateExactLocalizedTextWire(wire[1:]); err != nil {
+			return nil, 0, err
+		}
+	}
 	reader := bytes.NewReader(wire)
 	decoder := ua.NewBinaryDecoder(reader, ua.NewEncodingContext())
 	var value ua.Variant
@@ -61,7 +67,8 @@ func DecodeExactVariantPrefix(wire []byte) (ua.Variant, int, error) {
 func supportedExactVariantPrimitive(kind byte) bool {
 	return kind <= ua.VariantTypeXMLElement || kind == ua.VariantTypeNodeID ||
 		kind == ua.VariantTypeExpandedNodeID || kind == ua.VariantTypeStatusCode ||
-		kind == ua.VariantTypeQualifiedName || kind == ua.VariantTypeExtensionObject
+		kind == ua.VariantTypeQualifiedName || kind == ua.VariantTypeLocalizedText ||
+		kind == ua.VariantTypeExtensionObject
 }
 
 func validateExactVariantPrimitive(value ua.Variant) error {
@@ -105,6 +112,11 @@ func validateExactVariantPrimitive(value ua.Variant) error {
 			return errors.New("invalid exact QualifiedName")
 		}
 		return nil
+	case ua.LocalizedText:
+		if !utf8.ValidString(value.Locale) || !utf8.ValidString(value.Text) {
+			return errors.New("invalid exact LocalizedText UTF-8")
+		}
+		return nil
 	case ua.RawExtensionObject:
 		if value.RawTypeID == nil {
 			return errors.New("exact ExtensionObject requires raw TypeId")
@@ -119,6 +131,31 @@ func validateExactVariantPrimitive(value ua.Variant) error {
 	default:
 		return errors.New("unsupported exact Variant scalar value")
 	}
+}
+
+func validateExactLocalizedTextWire(wire []byte) error {
+	if len(wire) == 0 || wire[0]&^byte(3) != 0 {
+		return errors.New("invalid exact LocalizedText mask")
+	}
+	offset := 1
+	for _, bit := range []byte{1, 2} {
+		if wire[0]&bit == 0 {
+			continue
+		}
+		if len(wire)-offset < 4 {
+			return errors.New("truncated exact LocalizedText member")
+		}
+		length := int32(binary.LittleEndian.Uint32(wire[offset:]))
+		offset += 4
+		if length <= 0 || int(length) > len(wire)-offset {
+			return errors.New("invalid exact LocalizedText member length")
+		}
+		if !utf8.Valid(wire[offset : offset+int(length)]) {
+			return errors.New("invalid exact LocalizedText UTF-8")
+		}
+		offset += int(length)
+	}
+	return nil
 }
 
 func validateExactRawNodeID(value ua.RawNodeID) error {

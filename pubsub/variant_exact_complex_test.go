@@ -20,6 +20,7 @@ func TestExactVariantComplexScalarGoldenRoundTrip(t *testing.T) {
 		{"expanded node id", ua.RawExpandedNodeID{NodeID: ua.RawNodeID{Kind: ua.RawNodeIDNumeric, Numeric: 72}, NamespaceURIPresent: true, NamespaceURI: ua.NullableString{Value: "urn:x"}, ServerIndexPresent: true, ServerIndex: 3}, []byte{18, 0xc0, 72, 5, 0, 0, 0, 'u', 'r', 'n', ':', 'x', 3, 0, 0, 0}},
 		{"qualified name", ua.RawQualifiedName{NamespaceIndex: 2, Name: ua.NullableString{Value: "water"}}, []byte{20, 2, 0, 5, 0, 0, 0, 'w', 'a', 't', 'e', 'r'}},
 		{"null qualified name", ua.RawQualifiedName{NamespaceIndex: 2, Name: ua.NullableString{Null: true}}, []byte{20, 2, 0, 0xff, 0xff, 0xff, 0xff}},
+		{"localized text", ua.LocalizedText{Locale: "en", Text: "water"}, []byte{21, 3, 2, 0, 0, 0, 'e', 'n', 5, 0, 0, 0, 'w', 'a', 't', 'e', 'r'}},
 		{"binary extension", ua.RawExtensionObject{RawTypeID: &numeric, Encoding: 1, Body: []byte{0xaa, 0xbb}}, []byte{22, 1, 2, 44, 1, 1, 2, 0, 0, 0, 0xaa, 0xbb}},
 	}
 	for _, tc := range tests {
@@ -47,6 +48,8 @@ func TestExactVariantComplexScalarRejectsMalformed(t *testing.T) {
 		{17, 6},
 		{18, 0x80, 1, 0, 0, 0, 0},
 		{20, 0, 0, 0xfe, 0xff, 0xff, 0xff},
+		{21, 1, 0, 0, 0, 0},
+		{21, 4},
 		{22, 0, 0, 3},
 		{22, 0, 0, 1, 2, 0, 0, 0, 1},
 	} {
