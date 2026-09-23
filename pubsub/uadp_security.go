@@ -38,6 +38,12 @@ func validateUADPSecurity(token UADPSecurityToken, mode UADPSecurityMode) error 
 	return nil
 }
 
+// ValidateUADPSecurity validates PubSub-Aes256-CTR key material and mode
+// without retaining or modifying the supplied keys.
+func ValidateUADPSecurity(token UADPSecurityToken, mode UADPSecurityMode) error {
+	return validateUADPSecurity(token, mode)
+}
+
 func uadpCTR(token UADPSecurityToken, nonce [8]byte, payload []byte) error {
 	block, err := aes.NewCipher(token.EncryptingKey)
 	if err != nil {
