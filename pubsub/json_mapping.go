@@ -196,6 +196,13 @@ func decodeJSONObject(wire []byte, destination any) error {
 	return nil
 }
 
+// DecodeJSONObject decodes exactly one JSON object, rejects unknown fields,
+// and leaves duplicate-key rejection to ValidateJSONDocument when decoding an
+// untrusted complete document.
+func DecodeJSONObject(wire []byte, destination any) error {
+	return decodeJSONObject(wire, destination)
+}
+
 func validateJSONDocument(wire []byte) error {
 	if len(wire) == 0 || len(wire) > MaxJSONNetworkMessageBytes {
 		return fmt.Errorf("PubSub JSON message must be 1..%d bytes", MaxJSONNetworkMessageBytes)
@@ -208,6 +215,12 @@ func validateJSONDocument(wire []byte) error {
 		return errors.New("trailing PubSub JSON value")
 	}
 	return nil
+}
+
+// ValidateJSONDocument enforces the PubSub JSON byte/depth bounds, rejects
+// duplicate object keys at every level, and requires one complete value.
+func ValidateJSONDocument(wire []byte) error {
+	return validateJSONDocument(wire)
 }
 
 func scanUniqueJSON(decoder *json.Decoder, depth int) error {

@@ -36,3 +36,18 @@ func TestJSONNetworkMessageRejectsMalformed(t *testing.T) {
 		}
 	}
 }
+
+func TestStrictJSONDocumentAndObjectAPI(t *testing.T) {
+	if err := ValidateJSONDocument([]byte(`{"a":1,"a":2}`)); err == nil {
+		t.Fatal("duplicate key accepted")
+	}
+	var value struct {
+		A int `json:"a"`
+	}
+	if err := DecodeJSONObject([]byte(`{"a":1}`), &value); err != nil || value.A != 1 {
+		t.Fatalf("value=%#v error=%v", value, err)
+	}
+	if err := DecodeJSONObject([]byte(`{"a":1,"b":2}`), &value); err == nil {
+		t.Fatal("unknown field accepted")
+	}
+}
