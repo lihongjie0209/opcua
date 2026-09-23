@@ -23,7 +23,7 @@ type JSONMetadataAnnouncement struct {
 	WriterGroupName   string
 	DataSetWriterName string
 	Timestamp         string
-	Metadata          json.RawMessage
+	MetaData          json.RawMessage
 	DataSetName       string
 	MajorVersion      uint32
 	MinorVersion      uint32
@@ -97,7 +97,7 @@ func DecodeJSONMetadata(wire []byte) (JSONMetadataAnnouncement, error) {
 	result := JSONMetadataAnnouncement{
 		MessageID: envelope.MessageID, PublisherID: envelope.PublisherID, DataSetWriterID: *envelope.DataSetWriterID,
 		WriterGroupName: envelope.WriterGroupName, DataSetWriterName: envelope.DataSetWriterName, Timestamp: envelope.Timestamp,
-		Metadata: bytes.Clone(envelope.Metadata), DataSetName: metadata.Name, MajorVersion: *version.MajorVersion, MinorVersion: *version.MinorVersion,
+		MetaData: bytes.Clone(envelope.Metadata), DataSetName: metadata.Name, MajorVersion: *version.MajorVersion, MinorVersion: *version.MinorVersion,
 		Fields: make([]JSONMetadataField, len(metadata.Fields)),
 	}
 	seen := make(map[string]struct{}, len(metadata.Fields))
@@ -126,7 +126,7 @@ func EncodeJSONMetadata(message JSONMetadataAnnouncement) ([]byte, error) {
 	wire, err := json.Marshal(jsonMetadataEnvelope{
 		MessageID: message.MessageID, MessageType: "ua-metadata", PublisherID: message.PublisherID,
 		DataSetWriterID: &writerID, WriterGroupName: message.WriterGroupName, DataSetWriterName: message.DataSetWriterName,
-		Timestamp: message.Timestamp, Metadata: message.Metadata,
+		Timestamp: message.Timestamp, Metadata: message.MetaData,
 	})
 	if err != nil {
 		return nil, err
